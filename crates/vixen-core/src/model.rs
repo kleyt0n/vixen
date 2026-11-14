@@ -1,0 +1,189 @@
+//! Serializable data model shared by the CLI and the app UI.
+
+use serde::{Deserialize, Serialize};
+
+/// State of every configured target at one moment.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub taken_at: i64,
+    pub targets: Vec<TargetStatus>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TargetStatus {
+    pub name: String,
+    /// Human label, e.g. "slurm · ssh dgx".
+    pub kind: String,
+    pub ok: bool,
+    pub error: Option<String>,
+    /// Unix seconds of the last successful poll.
+    pub updated_at: i64,
+    pub latency_ms: u64,
+    pub host: Option<HostStats>,
+    pub gpus: Vec<Gpu>,
+    pub jobs: Vec<Job>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HostStats {
+    pub hostname: String,
+    pub cpus: u32,
+    pub load1: f32,
+    pub mem_used_mb: u64,
+    pub mem_total_mb: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Gpu {
+    pub index: u32,
+    /// Only used to map processes to GPUs.
+    #[serde(skip)]
+    pub uuid: Option<String>,
+    pub name: String,
+    pub util: Option<f32>,
+    pub mem_used_mb: Option<u64>,
+    pub mem_total_mb: Option<u64>,
+    /// Memory is shared with the CPU (GB10 / Apple Silicon); figures come from system RAM.
+    pub unified: bool,
+    pub temp_c: Option<f32>,
+    pub power_w: Option<f32>,
+    pub power_limit_w: Option<f32>,
+    /// Set when the GPU was sampled from inside a scheduler job.
+    pub job_id: Option<String>,
+    pub node: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JobState {
+    Running,
+    Pending,
+    Held,
+    Completing,
+    Suspended,
+    Failed,
+    Other,
+}
+
+impl JobState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Pending => "pending",
+            Self::Held => "held",
+            Self::Completing => "completing",
+            Self::Suspended => "suspended",
+            Self::Failed => "failed",
+            Self::Other => "other",
+        }
+    }
+    pub fn is_active(self) -> bool {
+        matches!(self, Self::Running | Self::Completing)
+    }
+}
+
+/// A unit of work: scheduler job, GPU process or cloud app.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Job {
+    pub id: String,
+    pub name: String,
+    pub user: Option<String>,
+    pub state: JobState,
+    /// Scheduler's own state string (e.g. "PENDING", "r", "Eqw").
+    pub raw_state: String,
+    /// Pending reason or node list.
+    pub detail: Option<String>,
+    pub queue: Option<String>,
+    pub resources: Option<String>,
+    /// Number of tasks folded into an array row.
+    pub array_tasks: Option<u32>,
+    pub submitted_at: Option<i64>,
+    pub started_at: Option<i64>,
+    /// Scheduler estimate for pending jobs.
+    pub est_start_at: Option<i64>,
+    pub elapsed_s: Option<u64>,
+    pub time_limit_s: Option<u64>,
+    pub log_path: Option<String>,
+    /// Seconds since the log file was last written.
+    pub log_age_s: Option<u64>,
+    pub last_line: Option<String>,
+    pub progress: Option<Progress>,
+    pub eta: Option<Eta>,
+    pub actions: Vec<Action>,
+}
+
+impl Job {
+    pub fn new(id: impl Into<String>, name: impl Into<String>, state: JobState) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            user: None,
+            state,
+            raw_state: state.label().into(),
+            detail: None,
+            queue: None,
+            resources: None,
+            array_tasks: None,
+            submitted_at: None,
+            started_at: None,
+            est_start_at: None,
+            elapsed_s: None,
+            time_limit_s: None,
+            log_path: None,
+            log_age_s: None,
+            last_line: None,
+            progress: None,
+            eta: None,
+            actions: Vec::new(),
+        }
+    }
+
+    pub fn time_left_s(&self) -> Option<u64> {
+        Some(self.time_limit_s?.saturating_sub(self.elapsed_s?))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Progress {
+    /// Overall completion in [0, 1].
+    pub fraction: f64,
+    /// e.g. "epoch 136/310 · step 150/500".
+    pub label: String,
+    /// Iterations per second reported by the job, if any.
+    pub it_per_s: Option<f64>,
+    /// Remaining seconds printed by the tool itself (tqdm `<mm:ss`), if any.
+    pub tool_remaining_s: Option<u64>,
+    /// Remaining work ÷ printed throughput, if both are known.
+    pub throughput_remaining_s: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EtaMethod {
+    /// Progress observed across polls (most accurate).
+    Observed,
+    /// Throughput printed in the log (it/s) × remaining work.
+    Throughput,
+    /// Remaining time printed by the tool (tqdm).
+    Tool,
+    /// Elapsed ÷ fraction (assumes the job started at 0%).
+    Elapsed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Eta {
+    pub remaining_s: u64,
+    pub finish_at: i64,
+    pub method: EtaMethod,
+    /// The job will hit its wall-time limit before finishing.
+    pub exceeds_limit: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Action {
+    Cancel,
+    Hold,
+    Release,
+    Logs,
+}

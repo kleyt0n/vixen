@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Vixen</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body class="panel-body">
+  <div class="panel">
+    <header class="p-head" title="Drag to move · double-click to fit content">
+      <svg class="logo"><use href="#logo"/></svg>
+      <div class="p-title"><b>Vixen</b><span id="p-sub"></span></div>
+      <div class="p-stats" id="p-stats"></div>
+      <button class="ghost icon" id="p-refresh" title="Refresh now">↻</button>
+    </header>
+    <div id="p-banner"></div>
+    <div class="p-body">
+      <section class="p-col" id="p-left">
+        <div class="p-sec">
+          <div class="p-label">Running <span class="count" id="n-running"></span></div>
+          <div id="p-jobs"></div>
+        </div>
+        <div class="p-sec">
+          <div class="p-label">Queued <span class="count" id="n-queued"></span></div>
+          <div id="p-queue"></div>
+        </div>
+      </section>
+      <section class="p-col p-right" id="p-right">
+        <div class="p-label">Machines <span class="count" id="n-machines"></span></div>
+        <div id="p-machines" class="p-machines"></div>
+      </section>
+    </div>
+    <footer class="p-foot">
+      <button class="ghost" data-a="open">Open Vixen</button>
+      <button class="ghost" data-a="settings">Settings…</button>
+      <span class="spacer"></span>
+      <span class="p-updated" data-ago="0" id="p-updated"></span>
+      <button class="ghost" data-a="quit">Quit</button>
+    </footer>
+  </div>
+  <script src="common.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

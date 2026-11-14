@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vixen</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="traffic"></div>
+    <div class="brand">
+      <svg class="logo"><use href="#logo"/></svg>
+      <span>Vixen</span>
+    </div>
+    <nav id="targets" aria-label="Targets"></nav>
+    <footer class="side-foot">
+      <button class="nav-item" id="btn-settings" title="Settings (⌘,)">
+        <span class="gear">⚙</span><span class="nav-name">Settings</span><span class="nav-badge" id="settings-dirty"></span>
+      </button>
+    </footer>
+  </aside>
+
+  <main id="view-settings" class="settings" hidden>
+    <header class="toolbar">
+      <div class="title-block">
+        <h1>Settings</h1>
+        <div id="set-path" class="muted mono"></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="set-open" title="Open the TOML file in your editor">Open file</button>
+      <button id="set-revert" disabled>Revert</button>
+      <button id="set-save" class="primary" disabled title="Save (⌘S)">Save</button>
+    </header>
+    <div class="content">
+      <div class="settings-body">
+        <div id="set-error"></div>
+
+        <h2 class="section-title">General</h2>
+        <div class="group-box">
+          <label class="row">
+            <div><div class="row-title">Poll interval</div><div class="row-help">How often each target is checked, unless it sets its own.</div></div>
+            <div class="unit"><input id="g-interval" type="number" min="2" step="1"><span>sec</span></div>
+          </label>
+          <label class="row">
+            <div><div class="row-title">Log tail</div><div class="row-help">Read from the end of each job log to find progress.</div></div>
+            <div class="unit"><input id="g-tail" type="number" min="1" step="1"><span>KB</span></div>
+          </label>
+        </div>
+
+        <div class="section-head">
+          <h2 class="section-title">Targets</h2>
+          <button id="t-add" class="ghost">＋ Add target</button>
+        </div>
+        <div class="targets-pane">
+          <div id="t-list" class="t-list"></div>
+          <div id="t-form" class="t-form"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <main id="view-dash">
+    <header class="toolbar">
+      <div class="title-block">
+        <h1 id="title">Overview</h1>
+        <div id="subtitle" class="muted"></div>
+      </div>
+      <div id="stats" class="stats"></div>
+      <input id="search" type="search" placeholder="Filter jobs  /" autocomplete="off" spellcheck="false">
+      <button id="btn-refresh" class="icon" title="Refresh now (⌘R)">↻</button>
+    </header>
+
+    <div class="content">
+      <div id="banner"></div>
+      <section>
+        <h2 class="section-title">GPUs <span id="gpu-count" class="count"></span></h2>
+        <div id="gpus" class="gpu-grid"></div>
+      </section>
+      <section>
+        <div class="jobs-head">
+          <h2 class="section-title">Jobs <span id="job-count" class="count"></span></h2>
+          <div class="segmented" id="filter">
+            <button data-f="active">Running</button>
+            <button data-f="queued">Queued</button>
+            <button data-f="all" class="on">All</button>
+          </div>
+        </div>
+        <div id="jobs" class="jobs"></div>
+      </section>
+    </div>
+  </main>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-head">
+      <div>
+        <div id="sheet-title" class="sheet-title"></div>
+        <div id="sheet-sub" class="muted mono small"></div>
+      </div>
+      <div class="sheet-actions">
+        <select id="sheet-lines" title="Lines">
+          <option>100</option><option selected>300</option><option>1000</option>
+        </select>
+        <button id="sheet-refresh" class="icon" title="Reload log">↻</button>
+        <button id="sheet-close" class="icon" title="Close (Esc)">✕</button>
+      </div>
+    </div>
+    <pre id="sheet-body" class="log"></pre>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="dialog" role="dialog" aria-modal="true">
+      <div id="modal-title" class="dialog-title"></div>
+      <div id="modal-body" class="muted"></div>
+      <div class="dialog-actions">
+        <button id="modal-cancel">Keep</button>
+        <button id="modal-ok" class="danger"></button>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="ssh-hosts"></datalist>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="common.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

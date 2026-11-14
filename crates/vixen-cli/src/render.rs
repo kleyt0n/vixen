@@ -1,0 +1,235 @@
+//! Plain-text rendering of a snapshot.
+
+use chrono::{Local, TimeZone};
+use std::fmt::Write;
+use vixen_core::timefmt::human;
+use vixen_core::{EtaMethod, Gpu, Job, JobState, Snapshot, TargetStatus};
+
+struct Paint(bool);
+
+impl Paint {
+    fn c(&self, code: &str, s: &str) -> String {
+        if self.0 { format!("\x1b[{code}m{s}\x1b[0m") } else { s.to_string() }
+    }
+    fn bold(&self, s: &str) -> String {
+        self.c("1", s)
+    }
+    fn dim(&self, s: &str) -> String {
+        self.c("2", s)
+    }
+    fn red(&self, s: &str) -> String {
+        self.c("31", s)
+    }
+    fn green(&self, s: &str) -> String {
+        self.c("32", s)
+    }
+    fn yellow(&self, s: &str) -> String {
+        self.c("33", s)
+    }
+    fn blue(&self, s: &str) -> String {
+        self.c("34", s)
+    }
+}
+
+pub fn dim(s: &str, color: bool) -> String {
+    Paint(color).dim(s)
+}
+
+/// `queued_limit`: max pending/held rows per target (None = all).
+pub fn snapshot(s: &Snapshot, color: bool, queued_limit: Option<usize>) -> String {
+    let p = Paint(color);
+    let mut out = String::new();
+    for t in &s.targets {
+        target(&mut out, t, &p, s.taken_at, queued_limit);
+    }
+    out
+}
+
+fn target(out: &mut String, t: &TargetStatus, p: &Paint, now: i64, queued_limit: Option<usize>) {
+    let dot = match (t.ok, t.updated_at) {
+        (true, _) => p.green("●"),
+        (false, 0) => p.red("●"),
+        (false, _) => p.yellow("●"),
+    };
+    let _ = writeln!(out, "{dot} {}  {}  {}", p.bold(&t.name), p.dim(&t.kind), p.dim(&format!("{}ms", t.latency_ms)));
+    if let Some(e) = &t.error {
+        let stale = if t.updated_at > 0 {
+            format!(" (showing data from {} ago)", human((now - t.updated_at).max(0) as u64))
+        } else {
+            String::new()
+        };
+        let _ = writeln!(out, "  {}{}", p.red(e), p.dim(&stale));
+    }
+    if let Some(h) = &t.host {
+        let _ = writeln!(
+            out,
+            "  {}  load {:.1}/{}  ram {}",
+            p.dim(&h.hostname),
+            h.load1,
+            h.cpus,
+            mem(Some(h.mem_used_mb), Some(h.mem_total_mb))
+        );
+    }
+    for g in &t.gpus {
+        gpu(out, g, p);
+    }
+    if !t.jobs.is_empty() {
+        let _ = writeln!(
+            out,
+            "  {}",
+            p.dim(&format!(
+                "{:<20} {:<26} {:<10} {:>8} {:>9}  {:<22} {:>8}  {}",
+                "JOB", "NAME", "STATE", "ELAPSED", "LIMIT", "PROGRESS", "ETA", "FINISH"
+            ))
+        );
+        let mut queued = 0;
+        let mut hidden: std::collections::BTreeMap<&str, usize> = Default::default();
+        for j in &t.jobs {
+            if !j.state.is_active() {
+                queued += 1;
+                if queued_limit.is_some_and(|l| queued > l) {
+                    *hidden.entry(j.state.label()).or_default() += 1;
+                    continue;
+                }
+            }
+            job(out, j, p);
+        }
+        if !hidden.is_empty() {
+            let parts: Vec<String> = hidden.iter().map(|(s, n)| format!("{n} {s}")).collect();
+            let _ = writeln!(out, "  {}", p.dim(&format!("… +{} (--all to show)", parts.join(", "))));
+        }
+    } else if t.ok {
+        let _ = writeln!(out, "  {}", p.dim("no jobs"));
+    }
+    out.push('\n');
+}
+
+fn bar(frac: f64, width: usize) -> String {
+    let cells = frac.clamp(0.0, 1.0) * width as f64;
+    let full = cells.floor() as usize;
+    let parts = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+    let rem = parts[((cells - full as f64) * 8.0) as usize % 8];
+    let mut s = "█".repeat(full);
+    s.push_str(rem);
+    let used = full + usize::from(!rem.is_empty());
+    s.push_str(&" ".repeat(width.saturating_sub(used)));
+    s
+}
+
+fn mem(used: Option<u64>, total: Option<u64>) -> String {
+    match (used, total) {
+        (Some(u), Some(t)) => format!("{:.1}/{:.0}G", u as f64 / 1024.0, t as f64 / 1024.0),
+        (Some(u), None) => format!("{:.1}G", u as f64 / 1024.0),
+        _ => "–".into(),
+    }
+}
+
+fn gpu(out: &mut String, g: &Gpu, p: &Paint) {
+    let util = g.util.unwrap_or(0.0);
+    let b = bar(util as f64 / 100.0, 12);
+    let b = if util >= 80.0 {
+        p.green(&b)
+    } else if util >= 30.0 {
+        p.yellow(&b)
+    } else {
+        p.dim(&b)
+    };
+    let mut extra = Vec::new();
+    extra.push(format!("mem {}{}", mem(g.mem_used_mb, g.mem_total_mb), if g.unified { " unified" } else { "" }));
+    if let Some(t) = g.temp_c {
+        extra.push(format!("{t:.0}°C"));
+    }
+    if let Some(w) = g.power_w {
+        extra.push(match g.power_limit_w {
+            Some(l) => format!("{w:.0}/{l:.0}W"),
+            None => format!("{w:.0}W"),
+        });
+    }
+    if let Some(j) = &g.job_id {
+        extra.push(format!("job {j}{}", g.node.as_deref().map(|n| format!(" @ {n}")).unwrap_or_default()));
+    }
+    let util_s = g.util.map(|u| format!("{u:>3.0}%")).unwrap_or_else(|| "  –".into());
+    let _ = writeln!(out, "  gpu{} {:<18} {b} {util_s}  {}", g.index, trunc(&g.name, 18), p.dim(&extra.join("  ")));
+}
+
+fn trunc(s: &str, n: usize) -> String {
+    if s.chars().count() <= n { s.to_string() } else { s.chars().take(n - 1).chain(['…']).collect() }
+}
+
+fn clock(ts: i64) -> String {
+    let Some(dt) = Local.timestamp_opt(ts, 0).single() else { return "?".into() };
+    let today = Local::now().date_naive();
+    if dt.date_naive() == today { dt.format("%H:%M").to_string() } else { dt.format("%a %H:%M").to_string() }
+}
+
+fn job(out: &mut String, j: &Job, p: &Paint) {
+    let state = {
+        let s = j.state.label();
+        match j.state {
+            JobState::Running => p.green(s),
+            JobState::Pending => p.blue(s),
+            JobState::Held | JobState::Suspended => p.yellow(s),
+            JobState::Failed => p.red(s),
+            _ => p.dim(s),
+        }
+    };
+    let pad = 10 + state.len() - j.state.label().len();
+    let mut id = j.id.clone();
+    if let Some(n) = j.array_tasks {
+        id = format!("{id} ×{n}");
+    }
+    let elapsed = j.elapsed_s.map(human).unwrap_or_default();
+    let limit = match (j.time_left_s(), j.time_limit_s) {
+        (Some(l), _) => format!("{} left", human(l)),
+        (None, Some(l)) => human(l),
+        _ => String::new(),
+    };
+    let (progress, eta, finish) = match (&j.progress, &j.eta) {
+        (Some(pr), eta) => {
+            let pct = format!("{:>5.1}%", pr.fraction * 100.0);
+            let prog = format!("{} {pct}", bar(pr.fraction, 14));
+            match eta {
+                Some(e) => {
+                    let mark = if e.method == EtaMethod::Elapsed { "~" } else { "" };
+                    let eta_s = format!("{mark}{}", human(e.remaining_s));
+                    let fin = clock(e.finish_at);
+                    let fin = if e.exceeds_limit { p.red(&format!("{fin} ⚠ exceeds limit")) } else { fin };
+                    (prog, eta_s, fin)
+                }
+                None => (prog, String::new(), String::new()),
+            }
+        }
+        (None, _) if j.state == JobState::Pending => (
+            String::new(),
+            String::new(),
+            j.est_start_at.map(|t| p.dim(&format!("starts ~{}", clock(t)))).unwrap_or_default(),
+        ),
+        _ => (String::new(), String::new(), String::new()),
+    };
+    let _ = writeln!(
+        out,
+        "  {:<20} {:<26} {state:<pad$} {elapsed:>8} {limit:>9}  {progress:<22} {eta:>8}  {finish}",
+        trunc(&id, 20),
+        trunc(&j.name, 26),
+    );
+    let mut sub = Vec::new();
+    if let Some(pr) = &j.progress {
+        let mut s = pr.label.clone();
+        if let Some(r) = pr.it_per_s {
+            s.push_str(&format!(" · {r:.2} it/s"));
+        }
+        sub.push(s);
+    }
+    if let Some(r) = &j.resources {
+        sub.push(r.clone());
+    }
+    if let Some(d) = &j.detail {
+        sub.push(d.clone());
+    }
+    if let Some(a) = j.log_age_s.filter(|a| *a > 600 && j.state == JobState::Running) {
+        sub.push(p.yellow(&format!("log silent {}", human(a))));
+    }
+    if !sub.is_empty() {
+        let _ = writeln!(out, "  {:<20} {}", "", p.dim(&sub.join("  ·  ")));
+    }
+}

@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = ["crates/vixen-core", "crates/vixen-cli", "app/src-tauri"]
+default-members = ["crates/vixen-core", "crates/vixen-cli", "app/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+vixen-core = { path = "crates/vixen-core" }
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+clap = { version = "4", features = ["derive"] }
+roxmltree = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "time", "sync", "io-util", "signal"] }
+toml = "0.8"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+# Never strip proc-macro / build-script dylibs (breaks dlopen on recent macOS).
+[profile.release.build-override]
+strip = false

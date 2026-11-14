@@ -1,0 +1,46 @@
+# vixen targets — copy to ~/.config/vixen/config.toml (or run `vixen init`).
+#
+# kind       = "host" (default) | "modal"
+# host       = SSH alias from ~/.ssh/config; omit to monitor this machine
+# scheduler  = "none" (default) | "slurm" | "sge"
+# host_gpus  = sample GPUs on the host itself with nvidia-smi (Apple GPU when local)
+# job_gpus   = Slurm only: sample GPUs inside your running jobs (srun --overlap)
+# all_users  = show everyone's jobs, not just yours
+# interval   = seconds between polls (global default below; a target may override it)
+
+interval = 300              # 5 minutes; ↻ / ⌘R polls immediately
+
+# A GPU server running its own Slurm controller (e.g. a DGX box).
+[[target]]
+name      = "dgx"
+host      = "dgx"
+scheduler = "slurm"
+host_gpus = true
+
+# An HPC cluster on Slurm: GPU jobs run on compute nodes, sampled in-job.
+[[target]]
+name      = "hpc"
+host      = "hpc-login"
+scheduler = "slurm"
+job_gpus  = true
+
+# An HPC cluster on SGE / Grid Engine.
+[[target]]
+name      = "hpc-sge"
+host      = "hpc-sge-login"
+scheduler = "sge"
+
+[[target]]
+name     = "modal"
+kind     = "modal"
+
+# This Mac (Apple GPU utilization).
+[[target]]
+name      = "local"
+host_gpus = true
+
+# Any other NVIDIA box (Lambda, RunPod, vast.ai, a workstation…):
+# [[target]]
+# name      = "lambda"
+# host      = "lambda-a100"
+# host_gpus = true
