@@ -14,8 +14,54 @@ pub struct Config {
     /// Bytes read from the end of each job log.
     #[serde(default = "default_tail_bytes")]
     pub tail_bytes: u32,
+    /// Code-agent monitoring (local session files).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub agents: Agents,
     #[serde(default, rename = "target", skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<Target>,
+}
+
+/// `[agents]`: which coding agents to watch on this machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Agents {
+    pub enabled: bool,
+    /// Sessions active within this many hours are listed.
+    pub window_hours: u64,
+    /// Seconds between scans (cheap: only changed files are re-read).
+    pub interval: u64,
+    pub claude_code: bool,
+    pub codex: bool,
+    pub antigravity: bool,
+    /// Fetch Claude plan limits live with Claude Code's saved login (Keychain on macOS)
+    /// instead of only reading what `/usage` last saved.
+    pub live_claude_limits: bool,
+}
+
+impl Default for Agents {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            window_hours: 24,
+            interval: 5,
+            claude_code: true,
+            codex: true,
+            antigravity: true,
+            live_claude_limits: false,
+        }
+    }
+}
+
+impl Agents {
+    pub fn watches(&self, tool: crate::model::Tool) -> bool {
+        use crate::model::Tool::*;
+        self.enabled
+            && match tool {
+                ClaudeCode => self.claude_code,
+                Codex => self.codex,
+                Antigravity => self.antigravity,
+            }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -163,6 +209,9 @@ impl Config {
     pub fn validate(&self) -> Result<()> {
         if self.interval < 2 {
             bail!("interval must be at least 2 seconds");
+        }
+        if self.agents.interval < 1 || self.agents.window_hours < 1 {
+            bail!("[agents] interval and window_hours must be at least 1");
         }
         let mut seen = std::collections::HashSet::new();
         for t in &self.targets {

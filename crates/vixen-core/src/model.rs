@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 pub struct Snapshot {
     pub taken_at: i64,
     pub targets: Vec<TargetStatus>,
+    /// Code-agent sessions (Claude Code, Codex, Antigravity…) active within the configured window.
+    #[serde(default)]
+    pub agents: Vec<Agent>,
+    /// Per-tool plan limits and token totals.
+    #[serde(default)]
+    pub usage: Vec<ToolUsage>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -186,4 +192,102 @@ pub enum Action {
     Hold,
     Release,
     Logs,
+}
+
+/// A coding-agent tool whose sessions vixen can read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tool {
+    ClaudeCode,
+    Codex,
+    Antigravity,
+}
+
+impl Tool {
+    pub const ALL: [Tool; 3] = [Tool::ClaudeCode, Tool::Codex, Tool::Antigravity];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Tool::ClaudeCode => "Claude Code",
+            Tool::Codex => "Codex",
+            Tool::Antigravity => "Antigravity",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentState {
+    /// Mid-turn: running tools or generating.
+    Working,
+    /// Turn finished recently; the agent is waiting for you.
+    Waiting,
+    /// No activity for a while.
+    Idle,
+}
+
+impl AgentState {
+    pub fn label(self) -> &'static str {
+        match self {
+            AgentState::Working => "working",
+            AgentState::Waiting => "waiting",
+            AgentState::Idle => "idle",
+        }
+    }
+}
+
+/// One agent session, read from the tool's own session files.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Agent {
+    pub tool: Tool,
+    /// Session id (as the tool names it).
+    pub id: String,
+    /// Session title, or the last prompt when the tool has none.
+    pub title: String,
+    pub cwd: Option<String>,
+    /// Last path component of `cwd`.
+    pub project: Option<String>,
+    pub branch: Option<String>,
+    pub model: Option<String>,
+    pub state: AgentState,
+    pub started_at: Option<i64>,
+    /// Unix seconds of the last recorded activity.
+    pub updated_at: i64,
+    /// Tokens in the model's context at the last turn, and the window size when known.
+    pub context_tokens: Option<u64>,
+    pub context_window: Option<u64>,
+    pub last_prompt: Option<String>,
+    pub last_reply: Option<String>,
+    /// Where it runs, e.g. `cli`, `vscode`, `sdk-cli`.
+    pub source: Option<String>,
+    /// Transcript file, for "reveal".
+    pub file: Option<String>,
+    /// Shell command that resumes the session in a terminal.
+    pub resume: Option<String>,
+}
+
+/// One plan limit as the tool reports it, e.g. the 5-hour session or the weekly cap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageLimit {
+    /// "Session (5h)", "Weekly", "Weekly · Opus"…
+    pub label: String,
+    /// 0–100.
+    pub percent: f64,
+    pub resets_at: Option<i64>,
+    /// `normal` / `warning` / `critical` when the tool says so.
+    pub severity: Option<String>,
+}
+
+/// Limits and token use for one agent tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolUsage {
+    pub tool: Tool,
+    pub plan: Option<String>,
+    pub limits: Vec<UsageLimit>,
+    /// When the tool last recorded these limits (they may be stale).
+    pub limits_as_of: Option<i64>,
+    /// Tokens (input + output + cache) used in the last 5 hours and since local midnight.
+    pub tokens_5h: u64,
+    pub tokens_today: u64,
+    pub sessions_today: usize,
 }

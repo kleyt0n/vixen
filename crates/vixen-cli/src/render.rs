@@ -3,7 +3,7 @@
 use chrono::{Local, TimeZone};
 use std::fmt::Write;
 use vixen_core::timefmt::human;
-use vixen_core::{EtaMethod, Gpu, Job, JobState, Snapshot, TargetStatus};
+use vixen_core::{Agent, AgentState, EtaMethod, Gpu, Job, JobState, Snapshot, TargetStatus, ToolUsage};
 
 struct Paint(bool);
 
@@ -232,4 +232,97 @@ fn job(out: &mut String, j: &Job, p: &Paint) {
     if !sub.is_empty() {
         let _ = writeln!(out, "  {:<20} {}", "", p.dim(&sub.join("  ·  ")));
     }
+}
+
+/// Agent sessions: working and waiting always shown; idle ones up to `idle_limit`.
+pub fn agents(list: &[Agent], color: bool, idle_limit: Option<usize>) -> String {
+    let p = Paint(color);
+    let now = vixen_core::monitor::now();
+    let mut out = String::new();
+    if list.is_empty() {
+        return p.dim("no agent sessions in the window\n");
+    }
+    let idle = list.iter().filter(|a| a.state == AgentState::Idle).count();
+    let mut shown_idle = 0;
+    for a in list {
+        if a.state == AgentState::Idle {
+            if idle_limit.is_some_and(|n| shown_idle >= n) {
+                continue;
+            }
+            shown_idle += 1;
+        }
+        let state = match a.state {
+            AgentState::Working => p.green("● working"),
+            AgentState::Waiting => p.yellow("◆ waiting"),
+            AgentState::Idle => p.dim("○ idle   "),
+        };
+        let place = [a.project.as_deref(), a.branch.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" · ");
+        let ctx = a.context_tokens.map(|t| format!("{}k ctx", t / 1000)).unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "{state}  {:<12} {}  {}",
+            a.tool.label(),
+            p.bold(&trunc(&a.title, 56)),
+            p.dim(&format!("{} ago", human((now - a.updated_at).max(0) as u64)))
+        );
+        let detail =
+            [place, a.model.clone().unwrap_or_default(), ctx].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>();
+        if !detail.is_empty() {
+            let _ = writeln!(out, "           {}", p.dim(&detail.join(" · ")));
+        }
+    }
+    if idle > shown_idle {
+        let _ = writeln!(out, "{}", p.dim(&format!("… +{} idle (--all to show)", idle - shown_idle)));
+    }
+    out
+}
+
+fn tokens(n: u64) -> String {
+    match n {
+        n if n >= 1_000_000 => format!("{:.1}M", n as f64 / 1e6),
+        n if n >= 1_000 => format!("{}k", n / 1000),
+        n => n.to_string(),
+    }
+}
+
+/// Plan limits and token totals, one block per tool.
+pub fn usage(list: &[ToolUsage], color: bool) -> String {
+    let p = Paint(color);
+    let now = vixen_core::monitor::now();
+    let mut out = String::new();
+    for u in list {
+        let plan = u.plan.as_deref().map(|s| format!(" · {s}")).unwrap_or_default();
+        let as_of = u
+            .limits_as_of
+            .map(|t| format!("  limits as of {} ago", human((now - t).max(0) as u64)))
+            .unwrap_or_default();
+        let _ = writeln!(out, "{}{}{}", p.bold(u.tool.label()), p.dim(&plan), p.dim(&as_of));
+        for l in &u.limits {
+            let reset = match l.resets_at {
+                Some(t) if t <= now => p.dim("reset since"),
+                Some(t) => p.dim(&format!("resets in {}", human((t - now) as u64))),
+                None => String::new(),
+            };
+            let pct = format!("{:>3.0}%", l.percent);
+            let pct = if l.percent >= 90.0 {
+                p.red(&pct)
+            } else if l.percent >= 70.0 {
+                p.yellow(&pct)
+            } else {
+                p.green(&pct)
+            };
+            let _ = writeln!(out, "  {:<18} {} {pct}  {reset}", l.label, bar(l.percent / 100.0, 12));
+        }
+        let _ = writeln!(
+            out,
+            "  {}\n",
+            p.dim(&format!(
+                "{} tokens last 5h · {} today · {} sessions today",
+                tokens(u.tokens_5h),
+                tokens(u.tokens_today),
+                u.sessions_today
+            ))
+        );
+    }
+    out
 }
