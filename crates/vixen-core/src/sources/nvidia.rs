@@ -13,7 +13,7 @@ free -m 2>/dev/null | awk '/^Mem:/{print $2, $3}'
 pub const GPU_SCRIPT: &str = r#"echo "@@GPU"
 if command -v nvidia-smi >/dev/null 2>&1; then
 nvidia-smi --query-gpu=index,uuid,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv,noheader,nounits 2>&1
-else echo "ERR nvidia-smi not found"; fi
+else echo "ERR no nvidia-smi or amd-smi found"; fi
 echo "@@PROC"
 nvidia-smi --query-compute-apps=pid,gpu_uuid,used_memory --format=csv,noheader,nounits 2>/dev/null | while IFS=', ' read -r pid uuid mem; do
   [ -n "$pid" ] || continue

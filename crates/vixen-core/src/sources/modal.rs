@@ -1,34 +1,16 @@
 //! Modal apps via the `modal` CLI (`modal app list --json`).
 
-use super::Poll;
+use super::{Poll, cli};
 use crate::config::Target;
-use crate::exec;
 use crate::model::{Action, Job, JobState};
 use crate::timefmt::RemoteClock;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::time::Duration;
 
-/// CLI argv: the configured command, else `modal`, else `uvx modal`.
-pub fn command(t: &Target) -> Vec<Vec<String>> {
-    match &t.command {
-        Some(c) => vec![c.split_whitespace().map(String::from).collect()],
-        None => vec![vec!["modal".into()], vec!["uvx".into(), "modal".into()]],
-    }
-}
-
 /// Run a modal subcommand with the first CLI that can be started.
 pub async fn run(t: &Target, args: &[&str], timeout: Duration) -> Result<String> {
-    let mut last = None;
-    for base in command(t) {
-        let argv: Vec<String> = base.into_iter().chain(args.iter().map(|s| s.to_string())).collect();
-        match exec::program(&argv, timeout).await {
-            Ok(out) => return Ok(out),
-            Err(e) if e.to_string().starts_with("cannot start") => last = Some(e),
-            Err(e) => return Err(e),
-        }
-    }
-    Err(last.context("modal CLI not found")?.context("install it with `uv tool install modal`"))
+    cli::run(t, args, timeout).await
 }
 
 pub async fn poll(t: &Target) -> Result<Poll> {
