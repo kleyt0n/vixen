@@ -8,7 +8,11 @@ use std::io::{IsTerminal, Write};
 use vixen_core::{Action, Config, Monitor, control};
 
 #[derive(Parser)]
-#[command(name = "vixen", version, about = "Monitor GPUs and jobs across SSH hosts, Slurm, SGE and Modal")]
+#[command(
+    name = "vixen",
+    version,
+    about = "Monitor GPUs and jobs across SSH hosts, Slurm, SGE, Modal, Vast.ai and SkyPilot"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -40,7 +44,7 @@ enum Cmd {
         #[arg(short = 'n', long, default_value_t = 40)]
         lines: u32,
     },
-    /// Cancel a job (scancel / qdel / kill / modal app stop).
+    /// Cancel a job (scancel / qdel / kill / modal app stop), or stop a Vast.ai instance or SkyPilot cluster.
     Cancel {
         target: String,
         job: String,

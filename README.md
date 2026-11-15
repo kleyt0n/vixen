@@ -4,7 +4,7 @@
 
 <h1 align="center">vixen</h1>
 
-<p align="center">GPU and job monitoring for SSH hosts, Slurm, SGE, Modal and your Mac.<br>
+<p align="center">GPU and job monitoring for SSH hosts, Slurm, SGE, Modal, Vast.ai, SkyPilot and your Mac.<br>
 A native macOS menu-bar app and a CLI, on one fast Rust core.</p>
 
 ---
@@ -13,7 +13,7 @@ A native macOS menu-bar app and a CLI, on one fast Rust core.</p>
 
 - **Fast**: at most one SSH round trip per poll, plus one more only when jobs are running. Reuses your `ControlMaster`.
 - **ETAs**: reads tqdm, `Epoch a/b`, `step a/b` and `it/s` from your logs, and warns when a job will overrun its wall time.
-- **Control**: cancel, hold, release and live logs across Slurm, SGE, plain processes and Modal.
+- **Control**: cancel, hold, release and live logs across Slurm, SGE, plain processes and Modal. Stop Vast.ai instances and SkyPilot clusters, and cancel SkyPilot managed jobs.
 - **In-job GPUs**: shows real compute-node utilisation through `srun --overlap nvidia-smi`.
 
 ## Install
@@ -56,9 +56,17 @@ job_gpus  = true        # GPU stats inside your running jobs
 [[target]]
 name = "modal"
 kind = "modal"
+
+[[target]]
+name = "vast"
+kind = "vast"       # vastai CLI; GPU utilisation without SSH
+
+[[target]]
+name = "sky"
+kind = "skypilot"   # sky CLI with `-o json` (checked on 0.14); clusters + managed jobs
 ```
 
-Any NVIDIA machine is just an SSH host with `host_gpus = true`.
+Any NVIDIA or AMD machine (via `nvidia-smi` or `amd-smi`) is just an SSH host with `host_gpus = true`.
 
 ## Use
 

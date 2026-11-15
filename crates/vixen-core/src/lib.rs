@@ -2,7 +2,7 @@
 //!
 //! * [`config`]   — targets file (`~/.config/vixen/config.toml`)
 //! * [`exec`]     — local / SSH command execution (one round trip per poll)
-//! * [`sources`]  — per-backend scripts + parsers (nvidia-smi, Slurm, SGE, Modal, Apple GPU)
+//! * [`sources`]  — per-backend scripts + parsers (nvidia-smi, amd-smi, Slurm, SGE, Modal, Vast.ai, SkyPilot, Apple GPU)
 //! * [`progress`] — training-log progress parsing and ETA estimation
 //! * [`monitor`]  — concurrent poll loop that publishes [`model::Snapshot`]s
 //! * [`control`]  — job actions (cancel, hold, release, logs)

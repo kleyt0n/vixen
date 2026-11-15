@@ -304,7 +304,7 @@ function findJob(k) {
   const [t, ...rest] = k.split("::");
   const id = rest.join("::");
   const target = S.snap?.targets.find((x) => x.name === t);
-  return { t, j: target?.jobs.find((j) => j.id === id) };
+  return { t, kind: target?.kind, j: target?.jobs.find((j) => j.id === id) };
 }
 
 let toastTimer;
@@ -413,7 +413,7 @@ $("#jobs").addEventListener("click", async (e) => {
   const row = e.target.closest("[data-key]");
   if (!row) return;
   const k = row.dataset.key;
-  const { t, j } = findJob(k);
+  const { t, kind, j } = findJob(k);
   const a = actBtn?.dataset.act;
   if (!a || a === "toggle") {
     if (row.classList.contains("detail") && !a) return; // clicks inside detail don't collapse
@@ -423,7 +423,11 @@ $("#jobs").addEventListener("click", async (e) => {
   if (!j) return;
   if (a === "logs") return openLog(t, j);
   if (a === "cancel") {
-    const ok = await confirmDialog(`Cancel “${j.name}”?`, `Job ${j.id} on ${t} will be terminated. This cannot be undone.`, "Cancel job");
+    // Vast instances and SkyPilot clusters are stopped (disks kept), not destroyed.
+    const stops = kind === "vast.ai" || (kind === "skypilot" && !/^\d+$/.test(j.id));
+    const ok = stops
+      ? await confirmDialog(`Stop “${j.name}”?`, `${j.id} on ${t} will be stopped. Its disk is kept and storage is still billed.`, "Stop")
+      : await confirmDialog(`Cancel “${j.name}”?`, `Job ${j.id} on ${t} will be terminated. This cannot be undone.`, "Cancel job");
     if (ok) await act(t, j, "cancel");
     return;
   }
@@ -489,11 +493,18 @@ const withDefaults = (cfg) => ({
   tail_bytes: cfg.tail_bytes ?? 6144,
   targets: (cfg.targets ?? cfg.target ?? []).map((t) => ({ ...clone(TARGET_DEFAULTS), ...t })),
 });
-const mode = (t) => (t.kind === "modal" ? "modal" : t.host != null ? "ssh" : "local");
+// Cloud kinds polled through a local CLI: kind → [label, default command, has uvx fallback].
+const CLOUDS = {
+  modal: ["Modal", "modal", true],
+  vast: ["Vast.ai", "vastai", true],
+  skypilot: ["SkyPilot", "sky", false],
+};
+const isCloud = (m) => m in CLOUDS;
+const mode = (t) => (isCloud(t.kind) ? t.kind : t.host != null ? "ssh" : "local");
 const isDirty = () => CFG.draft && JSON.stringify(CFG.draft) !== JSON.stringify(CFG.saved);
 
 function describeTarget(t) {
-  if (t.kind === "modal") return "Modal";
+  if (isCloud(t.kind)) return CLOUDS[t.kind][0];
   return [
     mode(t) === "ssh" ? t.host || "ssh" : "This Mac",
     t.scheduler !== "none" ? (t.scheduler === "sge" ? "SGE" : "Slurm") : null,
@@ -610,7 +621,7 @@ function renderTargetForm() {
   const t = CFG.draft.targets[CFG.sel];
   const form = $("#t-form");
   if (!t) {
-    form.innerHTML = `<div class="empty pad">Add a target to start monitoring a machine, cluster or Modal.</div>`;
+    form.innerHTML = `<div class="empty pad">Add a target to start monitoring a machine, cluster or cloud.</div>`;
     return;
   }
   const m = mode(t);
@@ -623,22 +634,26 @@ function renderTargetForm() {
     <h3 class="sub">Connection</h3>
     <div class="group-box">
       ${row("Name", "Shown in the sidebar and used by the CLI.", `<input data-f="name" value="${esc(t.name)}" spellcheck="false" autocomplete="off">`, "name")}
-      ${row("Type", "", seg("mode", m, [["ssh", "SSH host"], ["local", "This Mac"], ["modal", "Modal"]]))}`;
+      ${row("Type", "", seg("mode", m, [["ssh", "SSH host"], ["local", "This Mac"], ...Object.entries(CLOUDS).map(([k, [label]]) => [k, label])]))}`;
   if (m === "ssh") {
     html += row("SSH host", "An alias from ~/.ssh/config. Proxies and jump hosts are handled by ssh.",
       `<input data-f="host" value="${esc(t.host ?? "")}" list="ssh-hosts" placeholder="e.g. dgx" spellcheck="false" autocomplete="off">`, "host");
     html += row("SSH options", "Extra arguments passed to ssh. Optional.",
       `<input data-f="ssh_args" value="${esc(t.ssh_args.join(" "))}" placeholder="-p 2222" spellcheck="false" autocomplete="off">`);
   }
-  if (m === "modal") {
-    html += row("CLI command", "Falls back to <span class=\"mono\">uvx modal</span> when empty and modal isn't installed.",
-      `<input data-f="command" value="${esc(t.command ?? "")}" placeholder="modal" spellcheck="false" autocomplete="off">`);
+  if (isCloud(m)) {
+    const [, cmd, uvx] = CLOUDS[m];
+    const help = uvx
+      ? `Falls back to <span class="mono">uvx ${cmd}</span> when empty and ${cmd} isn't installed.`
+      : `Leave empty to use <span class="mono">${cmd}</span> from your PATH.`;
+    html += row("CLI command", help,
+      `<input data-f="command" value="${esc(t.command ?? "")}" placeholder="${cmd}" spellcheck="false" autocomplete="off">`);
   }
   html += `</div>`;
-  if (m !== "modal") {
+  if (!isCloud(m)) {
     html += `<h3 class="sub">Monitoring</h3><div class="group-box">
       ${row("Scheduler", "Lists your jobs with progress, ETAs and controls.", seg("sched", t.scheduler, [["none", "None"], ["slurm", "Slurm"], ["sge", "SGE"]]))}
-      ${row("Machine GPUs", m === "local" ? "Apple GPU utilisation on this Mac." : "Runs nvidia-smi on the host itself.", toggle("host_gpus", t.host_gpus))}
+      ${row("Machine GPUs", m === "local" ? "Apple GPU utilisation on this Mac." : "Runs nvidia-smi (or amd-smi) on the host itself.", toggle("host_gpus", t.host_gpus))}
       ${row("GPUs inside jobs", slurm ? "Runs nvidia-smi in your running jobs via srun --overlap." : "Requires Slurm.", toggle("job_gpus", t.job_gpus, !slurm))}
       ${row("All users", "Show everyone's jobs, not only yours.", toggle("all_users", t.all_users))}
     </div>`;
@@ -729,7 +744,7 @@ $("#t-form").addEventListener("click", async (e) => {
   if (!b || !t) return;
   if (b.dataset.mode) {
     const m = b.dataset.mode;
-    if (m === "modal") Object.assign(t, { kind: "modal", host: null, scheduler: "none", host_gpus: false, job_gpus: false, ssh_args: [] });
+    if (isCloud(m) && t.kind !== m) Object.assign(t, { kind: m, host: null, command: null, scheduler: "none", host_gpus: false, job_gpus: false, ssh_args: [] });
     if (m === "ssh") Object.assign(t, { kind: "host", host: t.host ?? "", command: null });
     if (m === "local") Object.assign(t, { kind: "host", host: null, command: null, ssh_args: [] });
     return changed(true);

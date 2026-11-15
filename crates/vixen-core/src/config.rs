@@ -35,6 +35,28 @@ pub enum Kind {
     Host,
     /// Modal apps via the `modal` CLI.
     Modal,
+    /// Vast.ai instances via the `vastai` CLI.
+    #[serde(alias = "vastai")]
+    Vast,
+    /// SkyPilot clusters and managed jobs via the `sky` CLI (any cloud SkyPilot supports).
+    #[serde(alias = "sky")]
+    Skypilot,
+}
+
+impl Kind {
+    /// Polled through a local cloud CLI rather than a shell on a host.
+    pub fn is_cli(self) -> bool {
+        self != Kind::Host
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Host => "host",
+            Kind::Modal => "modal",
+            Kind::Vast => "vast.ai",
+            Kind::Skypilot => "skypilot",
+        }
+    }
 }
 
 // Defaults are skipped when serialising so saved files stay minimal.
@@ -61,7 +83,8 @@ pub struct Target {
     /// Poll interval override (seconds).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interval: Option<u64>,
-    /// Modal only: command used to invoke the CLI (default: `modal`, falls back to `uvx modal`).
+    /// Cloud targets only: command used to invoke the CLI
+    /// (default: `modal` / `vastai` / `sky`; Modal and Vast fall back to `uvx`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
     /// Extra `ssh` arguments.
@@ -95,7 +118,6 @@ impl Target {
 
     pub fn describe(&self) -> String {
         match self.kind {
-            Kind::Modal => "modal".into(),
             Kind::Host => {
                 let mut parts = Vec::new();
                 match self.scheduler {
@@ -112,6 +134,7 @@ impl Target {
                 });
                 parts.join(" · ")
             }
+            k => k.label().into(),
         }
     }
 }
@@ -153,8 +176,8 @@ impl Config {
             if t.job_gpus && t.scheduler != Scheduler::Slurm {
                 bail!("target `{name}`: job_gpus requires scheduler = \"slurm\"");
             }
-            if t.kind == Kind::Modal && t.scheduler != Scheduler::None {
-                bail!("target `{name}`: modal targets don't use a scheduler");
+            if t.kind.is_cli() && t.scheduler != Scheduler::None {
+                bail!("target `{name}`: {} targets don't use a scheduler", t.kind.label());
             }
             if t.interval.is_some_and(|i| i < 2) {
                 bail!("target `{name}`: interval must be at least 2 seconds");
@@ -171,7 +194,7 @@ impl Config {
             t.host = blank(t.host.take());
             t.command = blank(t.command.take());
             t.ssh_args.retain(|a| !a.trim().is_empty());
-            if t.kind == Kind::Modal {
+            if t.kind.is_cli() {
                 t.host = None;
                 t.scheduler = Scheduler::None;
                 t.host_gpus = false;
@@ -274,6 +297,16 @@ mod tests {
         let cfg = cfg.normalized();
         assert_eq!(cfg.targets[0].name, "spaced");
         assert_eq!(cfg.targets[0].host, None);
+    }
+
+    #[test]
+    fn cloud_kinds() {
+        let cfg = Config::parse("[[target]]\nname='v'\nkind='vastai'\n[[target]]\nname='s'\nkind='sky'").unwrap();
+        assert_eq!(cfg.targets[0].kind, Kind::Vast);
+        assert_eq!(cfg.targets[1].kind, Kind::Skypilot);
+        assert_eq!(cfg.targets[1].describe(), "skypilot");
+        assert!(Config::parse("[[target]]\nname='v'\nkind='vast'\nscheduler='slurm'").is_err());
+        assert!(cfg.to_toml().unwrap().contains("kind = \"skypilot\""));
     }
 
     #[test]

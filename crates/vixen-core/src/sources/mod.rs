@@ -4,11 +4,15 @@
 //!    scheduler queue and log paths for active jobs;
 //! 2. **detail** — log tails (and in-job GPU samples) for active jobs.
 
+pub mod amd;
 pub mod apple;
+pub mod cli;
 pub mod modal;
 pub mod nvidia;
 pub mod sge;
+pub mod skypilot;
 pub mod slurm;
+pub mod vast;
 
 use crate::config::{Kind, Scheduler, Target};
 use crate::exec::{Exec, sections, shq};
@@ -50,8 +54,11 @@ fn local_mac(t: &Target) -> bool {
 }
 
 pub async fn poll(t: &Target, exec: &Exec, tail_bytes: u32) -> Result<Poll> {
-    if t.kind == Kind::Modal {
-        return modal::poll(t).await;
+    match t.kind {
+        Kind::Modal => return modal::poll(t).await,
+        Kind::Vast => return vast::poll(t).await,
+        Kind::Skypilot => return skypilot::poll(t).await,
+        Kind::Host => {}
     }
 
     // ---- phase 1: status ---------------------------------------------------
@@ -59,7 +66,7 @@ pub async fn poll(t: &Target, exec: &Exec, tail_bytes: u32) -> Result<Poll> {
     let mac = local_mac(t);
     script.push_str(if mac { apple::SCRIPT } else { nvidia::HOST_SCRIPT });
     if t.host_gpus {
-        script.push_str(if mac { apple::GPU_SCRIPT } else { nvidia::GPU_SCRIPT });
+        script.push_str(&if mac { apple::GPU_SCRIPT.to_string() } else { linux_gpu_script() });
     }
     match t.scheduler {
         Scheduler::Slurm => script.push_str(&slurm::script(t.all_users)),
@@ -77,6 +84,7 @@ pub async fn poll(t: &Target, exec: &Exec, tail_bytes: u32) -> Result<Poll> {
     let mut sge_state = sge::Parsed::default();
 
     let secs = sections(&out);
+    let section = |want: &str| secs.iter().find(|(n, _, _)| *n == want).map(|(_, _, l)| l.as_slice()).unwrap_or(&[]);
     for (name, arg, lines) in &secs {
         match *name {
             "TZ" => poll.clock = Some(RemoteClock::parse(arg)),
@@ -94,6 +102,7 @@ pub async fn poll(t: &Target, exec: &Exec, tail_bytes: u32) -> Result<Poll> {
             "MACHOST" => poll.host = apple::parse_host(arg, lines),
             "GPU" => poll.gpus = nvidia::parse_gpus(lines)?,
             "APPLEGPU" => poll.gpus = apple::parse_gpus(lines),
+            "AMDMON" => poll.gpus = amd::parse_gpus(section("AMDGPU"), lines)?,
             "PROC" if t.scheduler == Scheduler::None => {
                 for (job, log) in nvidia::parse_procs(lines, &poll.gpus, &me, t.all_users, clock.now) {
                     if let Some(path) = log {
@@ -149,6 +158,15 @@ pub async fn poll(t: &Target, exec: &Exec, tail_bytes: u32) -> Result<Poll> {
         }
     }
     Ok(poll)
+}
+
+/// nvidia-smi when present, else amd-smi; reports nvidia-smi missing when neither is.
+fn linux_gpu_script() -> String {
+    format!(
+        "if command -v nvidia-smi >/dev/null 2>&1 || ! command -v amd-smi >/dev/null 2>&1; then\n{}else\n{}fi\n",
+        nvidia::GPU_SCRIPT,
+        amd::GPU_SCRIPT
+    )
 }
 
 fn detail_script(tails: &[TailSpec], gpus: &[JobGpuSpec], tail_bytes: u32) -> String {

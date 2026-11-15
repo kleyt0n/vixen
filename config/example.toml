@@ -1,9 +1,10 @@
 # vixen targets — copy to ~/.config/vixen/config.toml (or run `vixen init`).
 #
-# kind       = "host" (default) | "modal"
+# kind       = "host" (default) | "modal" | "vast" | "skypilot"
 # host       = SSH alias from ~/.ssh/config; omit to monitor this machine
 # scheduler  = "none" (default) | "slurm" | "sge"
-# host_gpus  = sample GPUs on the host itself with nvidia-smi (Apple GPU when local)
+# host_gpus  = sample GPUs on the host itself with nvidia-smi or amd-smi (Apple GPU when local)
+# command    = cloud kinds only: CLI to run (default modal / vastai / sky)
 # job_gpus   = Slurm only: sample GPUs inside your running jobs (srun --overlap)
 # all_users  = show everyone's jobs, not just yours
 # interval   = seconds between polls (global default below; a target may override it)
@@ -34,12 +35,22 @@ scheduler = "sge"
 name     = "modal"
 kind     = "modal"
 
+# Vast.ai instances (`vastai set api-key …` first). GPU utilisation comes from Vast, no SSH needed.
+# [[target]]
+# name = "vast"
+# kind = "vast"
+
+# SkyPilot clusters and managed jobs on any cloud it supports (AWS, GCP, Azure, Lambda, RunPod, Kubernetes…).
+# [[target]]
+# name = "sky"
+# kind = "skypilot"
+
 # This Mac (Apple GPU utilization).
 [[target]]
 name      = "local"
 host_gpus = true
 
-# Any other NVIDIA box (Lambda, RunPod, vast.ai, a workstation…):
+# Any other NVIDIA or AMD box (Lambda, RunPod, a workstation…):
 # [[target]]
 # name      = "lambda"
 # host      = "lambda-a100"
