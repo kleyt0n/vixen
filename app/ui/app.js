@@ -908,6 +908,57 @@ $("#pref-fox").addEventListener("click", (e) => {
   if (b) savePrefs({ float_style: b.dataset.fox, float_button: true });
 });
 
+// ---- settings navigation ------------------------------------------------------
+
+const SET_PANES = [
+  { id: "general", label: "General", icon: "sliders" },
+  { id: "machines", label: "Machines", icon: "compute" },
+  { id: "agents", label: "Agents", icon: "agents" },
+  { group: "App" },
+  { id: "menubar", label: "Menu bar", icon: "menubar" },
+  { id: "fox", label: "Floating fox", icon: "fox" },
+  { id: "notifications", label: "Notifications", icon: "bell" },
+  { group: "" },
+  { id: "about", label: "About", icon: "info" },
+];
+const PANE_KEY = "vixen-settings-pane";
+let setPane = (() => { try { return localStorage.getItem(PANE_KEY) || "general"; } catch { return "general"; } })();
+
+/// Which config-backed panes have unsaved edits.
+function dirtyPanes() {
+  const d = CFG.draft, s = CFG.saved;
+  if (!d || !s) return new Set();
+  const j = JSON.stringify;
+  const out = new Set();
+  if (d.interval !== s.interval || d.tail_bytes !== s.tail_bytes) out.add("general");
+  if (j(d.targets) !== j(s.targets)) out.add("machines");
+  if (j(d.agents) !== j(s.agents)) out.add("agents");
+  return out;
+}
+
+function renderSetNav() {
+  const dirty = dirtyPanes();
+  setHTML($("#set-nav"), SET_PANES.map((p) => p.group !== undefined
+    ? `<div class="set-group">${esc(p.group)}</div>`
+    : `<button class="set-item ${p.id === setPane ? "on" : ""}" data-pane="${p.id}">${icon(p.icon)}<span>${p.label}</span>${dirty.has(p.id) ? '<span class="set-dirty" title="Unsaved changes"></span>' : ""}</button>`).join(""));
+  document.querySelectorAll(".set-pane").forEach((el) => (el.hidden = el.dataset.pane !== setPane));
+}
+
+function showPane(id) {
+  setPane = id;
+  try { localStorage.setItem(PANE_KEY, id); } catch {}
+  renderSetNav();
+  $("#view-settings .set-content").scrollTop = 0;
+}
+
+$("#set-nav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pane]");
+  if (b) showPane(b.dataset.pane);
+});
+$("#about-open").addEventListener("click", () => invoke("open_config").catch((e) => toast(String(e), true)));
+$("#about-gh").addEventListener("click", () => invoke("open_url", { url: "https://github.com/kleyt0n/vixen" }).catch((e) => toast(String(e), true)));
+window.__TAURI__.app?.getVersion?.().then((v) => ($("#about-version").textContent = v)).catch(() => {});
+
 async function openSettings() {
   loadPrefs();
   CFG.open = true;
@@ -916,6 +967,7 @@ async function openSettings() {
   $("#sheet").hidden = true;
   if (!CFG.draft) await loadSettings();
   renderSettings();
+  renderSetNav();
   render();
 }
 
@@ -968,6 +1020,7 @@ function renderSettings() {
   const d = CFG.draft;
   if (!d) return;
   $("#set-path").textContent = CFG.path;
+  $("#about-path").textContent = CFG.path;
   $("#set-path").title = CFG.path;
   $("#g-interval").value = d.interval;
   $("#g-tail").value = Math.round(d.tail_bytes / 1024);
@@ -1081,6 +1134,7 @@ function updateSettingsChrome() {
   $("#set-save").disabled = !(dirty || !CFG.exists) || errs.count > 0;
   $("#set-revert").disabled = !dirty;
   $("#settings-dirty").textContent = dirty ? "●" : "";
+  if (CFG.open) renderSetNav();
   $("#btn-settings").classList.toggle("on", CFG.open);
   $("#set-error").innerHTML = !CFG.exists
     ? `<div class="banner warn"><b>No config yet</b><span class="msg">These are example targets. Edit them and press Save to create the file.</span></div>`
