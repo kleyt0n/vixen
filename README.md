@@ -1,102 +1,57 @@
 <p align="center">
-  <img src="app/assets/logo.svg" width="88" alt="vixen">
+  <img src="app/assets/logo.svg" width="72" alt="vixen">
 </p>
 
 <h1 align="center">vixen</h1>
 
-<p align="center">GPU and job monitoring for SSH hosts, Slurm, SGE, Modal, Vast.ai, SkyPilot and your Mac.<br>
-A native macOS menu-bar app and a CLI, on one fast Rust core.</p>
+<p align="center">Your GPUs, jobs and coding agents, in the menu bar.</p>
 
----
-
-## Features
-
-- **Fast**: at most one SSH round trip per poll, plus one more only when jobs are running. Reuses your `ControlMaster`.
-- **ETAs**: reads tqdm, `Epoch a/b`, `step a/b` and `it/s` from your logs, and warns when a job will overrun its wall time.
-- **Control**: cancel, hold, release and live logs across Slurm, SGE, plain processes and Modal. Stop Vast.ai instances and SkyPilot clusters, and cancel SkyPilot managed jobs.
-- **In-job GPUs**: shows real compute-node utilisation through `srun --overlap nvidia-smi`.
+<p align="center">
+  <img src="app/assets/foxes/kit.svg" width="56" alt="Kit">
+  <img src="app/assets/foxes/snow.svg" width="56" alt="Snow">
+  <img src="app/assets/foxes/sleepy.svg" width="56" alt="Sleepy">
+  <img src="app/assets/foxes/mini.svg" width="56" alt="Mini">
+</p>
 
 ## Install
 
-**macOS / Linux**
-
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kleyt0n/vixen/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/kleyt0n/vixen/main/scripts/install.sh | sh     # macOS / Linux
 ```
-
-**Windows** (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/kleyt0n/vixen/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/kleyt0n/vixen/main/scripts/install.ps1 | iex        # Windows
 ```
 
-The installer puts the `vixen` CLI in `~/.local/bin` (on Windows, `%LOCALAPPDATA%\vixen\bin`). On macOS it also installs **Vixen.app**, and on every platform it writes a starter config. Pin a version with `VIXEN_VERSION=v0.1.0`. Downloads are checked against the release's `SHA256SUMS`.
+## What it does
 
-**From source:** `make install` builds the CLI and the app (the app needs `cargo install tauri-cli --version "^2" --locked`).
+- **Compute**: GPUs and jobs on SSH hosts, Slurm, SGE, Modal, Vast.ai, SkyPilot and your Mac. ETAs read from your training logs; cancel, hold and release jobs.
+- **Agents**: Claude Code, Codex and Antigravity sessions, shown as working, waiting or idle, with plan limits and token use. Resume any session in one click.
+- **Fox**: an optional floating fox that tells you when a job starts, finishes or fails, or when a limit runs high.
 
 ## Configure
 
-Edit targets in the app's **Settings**, or by hand. Hosts are aliases from `~/.ssh/config`. See [`config/example.toml`](config/example.toml) for every option.
+Edit targets in **Settings** (`⌘,`), or in `~/.config/vixen/config.toml`:
 
 ```toml
-interval = 300          # seconds (5 min)
-
 [[target]]
 name      = "dgx"
-host      = "dgx"
-scheduler = "slurm"     # slurm | sge | none
-host_gpus = true
-
-[[target]]
-name      = "hpc"
-host      = "hpc-login"
+host      = "dgx"        # alias from ~/.ssh/config
 scheduler = "slurm"
-job_gpus  = true        # GPU stats inside your running jobs
-
-[[target]]
-name = "modal"
-kind = "modal"
-
-[[target]]
-name = "vast"
-kind = "vast"       # vastai CLI; GPU utilisation without SSH
-
-[[target]]
-name = "sky"
-kind = "skypilot"   # sky CLI with `-o json` (checked on 0.14); clusters + managed jobs
+host_gpus = true
 ```
 
-Any NVIDIA or AMD machine (via `nvidia-smi` or `amd-smi`) is just an SSH host with `host_gpus = true`.
+Every option is in [`config/example.toml`](config/example.toml).
 
-## Use
+## CLI
 
 ```sh
-vixen                          # status
-vixen watch                    # live
-vixen logs    <target> <job>
-vixen cancel  <target> <job>
-vixen hold    <target> <job>
-vixen release <target> <job>
+vixen                    # status
+vixen watch              # live
+vixen agents             # coding agents
+vixen logs   <target> <job>
+vixen cancel <target> <job>
 ```
-
-The app has three parts:
-
-- **Window**: GPU cards with vendor badges, and a job table with live ETA countdowns.
-- **Menu bar**: shows `3 ▸ 2h 31m`. Click it for a panel listing running jobs with progress and ETA, and each machine with its GPUs.
-- **Settings** (`⌘,`): edit targets, test each connection and save. The app writes `config.toml` and keeps the previous version as `.bak`.
-
-You get a notification when a job ends or is about to overrun its time limit.
-
-## Layout
-
-```
-crates/vixen-core   config, SSH, backends, ETA, job control
-crates/vixen-cli    vixen command
-app/src-tauri        macOS app
-app/ui               HTML/CSS/JS, no build step
-```
-
-`make help` lists all build tasks. Pushing a `v*` tag builds and publishes a release (see `.github/workflows/release.yml`).
 
 ## License
 
