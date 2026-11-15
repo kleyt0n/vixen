@@ -46,10 +46,25 @@ function allJobs() {
   return out;
 }
 
+// Per-machine average GPU utilisation over time for the Home chart: 24 h, saved
+// locally so the chart survives restarts.
+const MHIST_KEY = "vixen-util-history";
+const MHIST_S = 24 * 3600;
+S.mhist = (() => {
+  try { return JSON.parse(localStorage.getItem(MHIST_KEY)) ?? {}; } catch { return {}; }
+})();
+let mhistSaved = 0;
+
 function sampleHistory() {
   for (const t of S.snap?.targets ?? []) {
     if (!t.ok || S.seen.get(t.name) === t.updated_at) continue;
     S.seen.set(t.name, t.updated_at);
+    if (t.gpus.length) {
+      const avg = t.gpus.reduce((s, g) => s + (g.util ?? 0), 0) / t.gpus.length;
+      const h = (S.mhist[t.name] ??= []);
+      if (!h.length || h[h.length - 1][0] !== t.updated_at) h.push([t.updated_at, Math.round(avg * 10) / 10]);
+      while (h.length && h[0][0] < now() - MHIST_S) h.shift();
+    }
     for (const g of t.gpus) {
       const k = `${t.name}/${g.job_id ?? ""}/${g.index}`;
       const h = S.hist.get(k) ?? [];
@@ -57,6 +72,10 @@ function sampleHistory() {
       if (h.length > HIST) h.shift();
       S.hist.set(k, h);
     }
+  }
+  if (Date.now() - mhistSaved > 60_000) {
+    mhistSaved = Date.now();
+    try { localStorage.setItem(MHIST_KEY, JSON.stringify(S.mhist)); } catch {}
   }
 }
 
@@ -69,7 +88,7 @@ function renderNow() {
   frame = requestAnimationFrame(() => {
     frame = 0;
     renderNav();
-    if (S.page === "home") renderHome();
+    if (S.page === "home") { renderHome(); renderTrends(); }
     if (S.page === "agents") renderAgents();
     if (S.page === "compute") {
       renderHeader();
@@ -108,41 +127,54 @@ function showPage(page) {
 const agentList = () => S.snap?.agents ?? [];
 const running = (t) => t.jobs.filter((j) => j.state === "running" || j.state === "completing").length;
 
+// Collapsed sidebar sections, remembered per viewer.
+const NAV_KEY = "vixen-nav-collapsed";
+S.navCollapsed = (() => { try { return new Set(JSON.parse(localStorage.getItem(NAV_KEY)) ?? []); } catch { return new Set(); } })();
+
 function renderNav() {
   const ts = S.snap?.targets ?? [];
   const ags = agentList();
   const on = (page, ok = true) => (!CFG.open && S.page === page && ok ? "on" : "");
+  const pill = (n, cls = "") => (n ? `<span class="pill-n ${cls}">${n}</span>` : "");
   const jobsRunning = ts.reduce((n, t) => n + running(t), 0);
   const working = ags.filter((a) => a.state === "working").length;
   const waiting = ags.filter((a) => a.state === "waiting").length;
   const attn = attention().length;
-  const health = ts.every((t) => t.ok) && ts.length ? "ok" : ts.some((t) => !t.ok && t.error) ? "stale" : "wait";
+  const health = !ts.length ? "wait" : ts.every((t) => t.ok) ? "ok" : ts.some((t) => t.error && !t.updated_at) ? "down" : "stale";
+  const section = (id, page, ok, ico, label, badges, dot) => {
+    const shut = S.navCollapsed.has(id);
+    return `<div class="nav-sec ${shut ? "shut" : ""}">
+      <button class="nav-item top ${on(page, ok)}" data-page="${page}" ${page === "compute" ? 'data-view="all"' : 'data-tool="all"'}>
+        <span class="nav-ic">${icon(ico)}${dot ? `<span class="ic-dot ${dot}"></span>` : ""}</span>
+        <span class="nav-name">${label}</span><span class="nav-pills">${badges}</span>
+        <span class="nav-chev" data-collapse="${id}" title="${shut ? "Expand" : "Collapse"}">${icon("chevron")}</span></button>`;
+  };
 
-  let html = `<button class="nav-item ${on("home")}" data-page="home">
-      <span class="nav-ico">⌂</span><span class="nav-name">Home</span>
-      <span class="nav-badge ${attn ? "hot" : ""}">${attn || ""}</span></button>
-    <div class="nav-label">Compute</div>
-    <button class="nav-item ${on("compute", S.view === "all")}" data-page="compute" data-view="all">
-      <span class="dot ${health}"></span><span class="nav-name">All machines</span><span class="nav-badge">${jobsRunning || ""}</span></button>`;
+  let html = `<button class="nav-item top ${on("home")}" data-page="home">
+      <span class="nav-ic">${icon("home")}</span><span class="nav-name">Home</span>
+      <span class="nav-pills">${pill(attn, "hot")}</span></button>`;
+
+  html += section("compute", "compute", S.view === "all", "compute", "Compute", pill(jobsRunning, "run"), health !== "ok" ? health : "");
+  html += `<div class="nav-kids">`;
   for (const t of ts) {
     const r = running(t), q = t.jobs.filter(isQueued).length;
-    const badge = [r ? `${r}▸` : "", q ? `${q}` : ""].filter(Boolean).join(" · ");
-    html += `<button class="nav-item sub ${on("compute", S.view === t.name)}" data-page="compute" data-view="${esc(t.name)}" title="${esc(t.error ?? `${t.kind} · ${t.latency_ms} ms`)}">
-      <span class="dot ${targetDot(t)}"></span>
-      <span class="nav-name">${esc(t.name)}</span><span class="nav-badge">${badge}</span></button>`;
+    html += `<button class="nav-item kid ${on("compute", S.view === t.name)}" data-page="compute" data-view="${esc(t.name)}" title="${esc(t.error ?? `${t.kind} · ${t.latency_ms} ms`)}">
+      <span class="nav-ic">${icon(targetIcon(t))}<span class="ic-dot ${targetDot(t)}"></span></span>
+      <span class="nav-name">${esc(t.name)}</span><span class="nav-pills">${pill(r, "run")}${pill(q)}</span></button>`;
   }
-  html += `<div class="nav-label">Agents</div>
-    <button class="nav-item ${on("agents", S.tool === "all")}" data-page="agents" data-tool="all">
-      <span class="dot ${working ? "ok" : waiting ? "stale" : ""}"></span><span class="nav-name">All agents</span>
-      <span class="nav-badge">${[working && `${working}▸`, waiting && `${waiting}◆`].filter(Boolean).join(" · ")}</span></button>`;
+  html += `</div></div>`;
+
+  html += section("agents", "agents", S.tool === "all", "agents", "Agents", `${pill(working, "run")}${pill(waiting, "hot")}`, "");
+  html += `<div class="nav-kids">`;
   for (const id of Object.keys(TOOLS)) {
     const mine = ags.filter((a) => a.tool === id);
     if (!mine.length) continue;
     const w = mine.filter((a) => a.state === "working").length, q = mine.filter((a) => a.state === "waiting").length;
-    html += `<button class="nav-item sub ${on("agents", S.tool === id)}" data-page="agents" data-tool="${id}">
-      ${toolChip(id, "sm")}<span class="nav-name">${TOOLS[id].label}</span>
-      <span class="nav-badge">${[w && `${w}▸`, q && `${q}◆`].filter(Boolean).join(" · ") || mine.length}</span></button>`;
+    html += `<button class="nav-item kid ${on("agents", S.tool === id)}" data-page="agents" data-tool="${id}">
+      <span class="nav-ic">${toolChip(id, "sm")}</span><span class="nav-name">${TOOLS[id].label}</span>
+      <span class="nav-pills">${pill(w, "run")}${pill(q, "hot")}</span></button>`;
   }
+  html += `</div></div>`;
   setHTML($("#targets"), html);
 }
 
@@ -302,6 +334,50 @@ function renderHome() {
         ${toolChip(a.tool, "sm")}<div class="cell"><div class="mini-top"><span class="name">${esc(a.title)}</span><span class="faint small"><span data-since="${a.updated_at}"></span></span></div>
         <div class="l2">${esc([a.project, a.branch].filter(Boolean).join(" · "))}</div></div></div>`).join("") || `<div class="empty">No agents working.</div>`}</div>`);
 }
+
+// ---- home charts ------------------------------------------------------------
+
+// Colour follows the entity: a machine keeps its config position's slot; each tool has a fixed slot.
+const seriesColor = (i) => `var(--series-${(i % 8) + 1})`;
+const TOOL_SLOT = { codex: 0, claude_code: 1, antigravity: 2 };
+S.utilRange = 6;
+
+function renderTrends() {
+  const ts = S.snap?.targets ?? [];
+  const n = now();
+  const from = n - S.utilRange * 3600;
+  const series = ts.map((t, i) => ({ name: t.name, color: seriesColor(i), points: S.mhist[t.name] ?? [] }))
+    .filter((s) => s.points.some(([t]) => t >= from));
+  const ub = $("#util-chart");
+  setHTML($("#util-legend"), series.length > 1 ? legend(series) : "");
+  const ukey = JSON.stringify([S.utilRange, series.map((s) => s.points.length), ub.clientWidth, Math.floor(n / 60)]);
+  if (ub.dataset.k !== ukey) {
+    ub.dataset.k = ukey;
+    if (series.length) lineChart(ub, series, from, n);
+    else ub.innerHTML = `<div class="empty">GPU history fills in as Vixen polls your machines.</div>`;
+  }
+
+  const usage = S.snap?.usage ?? [];
+  const stacks = usage.filter((u) => u.tokens_by_hour?.some((v) => v > 0))
+    .map((u) => ({ name: TOOLS[u.tool]?.label ?? u.tool, color: seriesColor(TOOL_SLOT[u.tool] ?? 3), values: u.tokens_by_hour }));
+  const tb = $("#tok-chart");
+  setHTML($("#tok-legend"), stacks.length > 1 ? legend(stacks) : "");
+  const tkey = JSON.stringify([stacks.map((s) => s.values), tb.clientWidth, Math.floor(n / 3600)]);
+  if (tb.dataset.k !== tkey) {
+    tb.dataset.k = tkey;
+    if (stacks.length) hourlyBars(tb, stacks, n);
+    else tb.innerHTML = `<div class="empty">No agent tokens in the last 24 hours.</div>`;
+  }
+}
+
+$("#util-range").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-r]");
+  if (!b) return;
+  S.utilRange = Number(b.dataset.r);
+  document.querySelectorAll("#util-range button").forEach((x) => x.classList.toggle("on", x === b));
+  render();
+});
+window.addEventListener("resize", () => S.page === "home" && render());
 
 async function agentAct(k, action) {
   const a = agentList().find((x) => agentKey(x) === k);
@@ -585,6 +661,14 @@ async function refreshAll(target = null) {
 // ---- events -----------------------------------------------------------------
 
 $("#targets").addEventListener("click", (e) => {
+  const fold = e.target.closest("[data-collapse]");
+  if (fold) {
+    e.stopPropagation();
+    const id = fold.dataset.collapse;
+    S.navCollapsed.has(id) ? S.navCollapsed.delete(id) : S.navCollapsed.add(id);
+    try { localStorage.setItem(NAV_KEY, JSON.stringify([...S.navCollapsed])); } catch {}
+    return render();
+  }
   const b = e.target.closest("[data-page]");
   if (!b) return;
   if (b.dataset.view) S.view = b.dataset.view;
@@ -1142,6 +1226,8 @@ $("#agent-cfg").addEventListener("input", (e) => {
 });
 
 onDismissChange(() => render());
+
+$("#settings-ic").innerHTML = icon("gear");
 
 // ---- boot -------------------------------------------------------------------
 
