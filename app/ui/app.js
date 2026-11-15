@@ -904,7 +904,7 @@ $("#pref-limit").addEventListener("change", (e) => {
 });
 $("#pref-fox").addEventListener("click", (e) => {
   const b = e.target.closest("[data-fox]");
-  // Picking a fox also turns the floating button on.
+  // Picking an icon also turns the floating button on.
   if (b) savePrefs({ float_style: b.dataset.fox, float_button: true });
 });
 
@@ -916,7 +916,7 @@ const SET_PANES = [
   { id: "agents", label: "Agents", icon: "agents" },
   { group: "App" },
   { id: "menubar", label: "Menu bar", icon: "menubar" },
-  { id: "fox", label: "Floating fox", icon: "fox" },
+  { id: "fox", label: "Floating icon", icon: "fox" },
   { id: "notifications", label: "Notifications", icon: "bell" },
   { group: "" },
   { id: "about", label: "About", icon: "info" },
