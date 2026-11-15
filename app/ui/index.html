@@ -33,12 +33,14 @@
       <button id="set-revert" disabled>Revert</button>
       <button id="set-save" class="primary" disabled title="Save (⌘S)">Save</button>
     </header>
-    <div class="content">
-      <div class="settings-body">
-        <div id="set-error"></div>
-
-        <h2 class="section-title">General</h2>
-        <div class="group-box">
+    <div class="settings-layout">
+      <nav class="set-nav" id="set-nav" aria-label="Settings sections"></nav>
+      <div class="content set-content">
+        <div class="settings-body">
+          <div id="set-error"></div>
+          <section class="set-pane" data-pane="general" hidden>
+            <header class="pane-head"><div><h2>General</h2><p>How often machines are polled and how much of each job log is read.</p></div><span class="scope save">Saved to config.toml</span></header>
+<div class="group-box">
           <label class="row">
             <div><div class="row-title">Poll interval</div><div class="row-help">How often each target is checked, unless it sets its own.</div></div>
             <div class="unit"><input id="g-interval" type="number" min="2" step="1"><span>sec</span></div>
@@ -48,12 +50,18 @@
             <div class="unit"><input id="g-tail" type="number" min="1" step="1"><span>KB</span></div>
           </label>
         </div>
-
-        <div class="section-head">
-          <h2 class="section-title">Agents</h2>
-          <span class="muted small">Read from each tool's local session files</span>
-        </div>
-        <div class="group-box" id="agent-cfg">
+          </section>
+          <section class="set-pane" data-pane="machines" hidden>
+            <header class="pane-head"><div><h2>Machines</h2><p>SSH hosts, clusters and cloud providers to monitor. Hosts are aliases from ~/.ssh/config.</p></div><span class="scope save">Saved to config.toml</span></header>
+            <div class="pane-actions"><button id="t-add" class="ghost">＋ Add machine</button></div>
+            <div class="targets-pane">
+          <div id="t-list" class="t-list"></div>
+          <div id="t-form" class="t-form"></div>
+        
+          </section>
+          <section class="set-pane" data-pane="agents" hidden>
+            <header class="pane-head"><div><h2>Agents</h2><p>Coding agents read from each tool's local session files on this Mac.</p></div><span class="scope save">Saved to config.toml</span></header>
+<div class="group-box" id="agent-cfg">
           <div class="row">
             <div><div class="row-title">Watch code agents</div><div class="row-help">Show Claude Code, Codex and Antigravity sessions on this Mac.</div></div>
             <div class="ctl"><label class="switch"><input type="checkbox" data-ag="enabled"><span></span></label></div>
@@ -75,23 +83,29 @@
             <div class="unit"><input data-ag="window_hours" type="number" min="1" step="1"><span>h</span></div>
           </label>
         </div>
-
-        <div class="section-head">
-          <h2 class="section-title">App</h2>
-          <span class="muted small">Applies immediately</span>
-        </div>
-        <div class="group-box" id="app-prefs">
-          <div class="row">
+          </section>
+          <section class="set-pane" data-pane="menubar" hidden>
+            <header class="pane-head"><div><h2>Menu bar</h2><p>What the fox in the menu bar shows next to it.</p></div><span class="scope now">Applies immediately</span></header>
+<div class="group-box"><div class="row">
             <div><div class="row-title">Menu bar</div><div class="row-help">What appears next to the fox in the menu bar.</div></div>
             <div class="ctl"><div class="segmented" id="pref-tray">
               <button data-tray="icon">Icon</button><button data-tray="count">Count</button><button data-tray="count_eta">Count + ETA</button>
             </div></div>
-          </div>
-          <div class="row">
+          </div></div>
+          </section>
+          <section class="set-pane" data-pane="fox" hidden>
+            <header class="pane-head"><div><h2>Floating fox</h2><p>An optional fox above your windows. Click it for the summary; drag to move it.</p></div><span class="scope now">Applies immediately</span></header>
+<div class="group-box"><div class="row">
             <div><div class="row-title">Floating button</div><div class="row-help">A small fox button above all windows. Click for the summary; drag to move it.</div></div>
             <div class="ctl"><label class="switch"><input type="checkbox" id="pref-float"><span></span></label></div>
-          </div>
-          <div class="row">
+          </div><div class="row fox-row">
+            <div><div class="row-title">Fox</div><div class="row-help">Which fox floats on your screen.</div></div>
+            <div class="fox-picker" id="pref-fox"></div>
+          </div></div>
+          </section>
+          <section class="set-pane" data-pane="notifications" hidden>
+            <header class="pane-head"><div><h2>Notifications</h2><p>When the fox and macOS tell you something happened.</p></div><span class="scope now">Applies immediately</span></header>
+<div class="group-box"><div class="row">
             <div><div class="row-title">Fox messages</div><div class="row-help">The fox shows a message (close it with ✕) when these happen.</div></div>
             <div class="ctl tool-toggles" id="pref-events">
               <label><input type="checkbox" data-ev="started"> Job started</label>
@@ -99,24 +113,26 @@
               <label><input type="checkbox" data-ev="failed"> Failed</label>
               <label><input type="checkbox" data-ev="limits"> Limits</label>
             </div>
-          </div>
-          <label class="row">
+          </div><label class="row">
             <div><div class="row-title">Limit alert</div><div class="row-help">Alert when any agent limit (session, weekly…) reaches this. 0 turns it off.</div></div>
             <div class="unit"><input id="pref-limit" type="number" min="0" max="100" step="5"><span>%</span></div>
-          </label>
-          <div class="row fox-row">
-            <div><div class="row-title">Fox</div><div class="row-help">Which fox floats on your screen.</div></div>
-            <div class="fox-picker" id="pref-fox"></div>
-          </div>
-        </div>
-
-        <div class="section-head">
-          <h2 class="section-title">Targets</h2>
-          <button id="t-add" class="ghost">＋ Add target</button>
-        </div>
-        <div class="targets-pane">
-          <div id="t-list" class="t-list"></div>
-          <div id="t-form" class="t-form"></div>
+          </label></div>
+            <p class="pane-note">macOS notifications are sent for finished and failed jobs, agents waiting for you, and limits above the threshold. Manage them in System Settings → Notifications → Vixen.</p>
+          </section>
+          <section class="set-pane" data-pane="about" hidden>
+            <header class="pane-head"><div><h2>About</h2><p></p></div></header>
+            <div class="about">
+              <svg class="about-logo"><use href="#logo"/></svg>
+              <div><div class="about-name">Vixen <span id="about-version" class="muted"></span></div>
+              <div class="muted">GPU, job and coding-agent monitoring.</div></div>
+            </div>
+            <div class="group-box">
+              <div class="row"><div><div class="row-title">Configuration</div><div class="row-help mono" id="about-path"></div></div>
+                <div class="ctl"><button id="about-open">Open file</button></div></div>
+              <div class="row"><div><div class="row-title">Source and releases</div><div class="row-help">github.com/kleyt0n/vixen</div></div>
+                <div class="ctl"><button id="about-gh">Open on GitHub</button></div></div>
+            </div>
+          </section>
         </div>
       </div>
     </div>

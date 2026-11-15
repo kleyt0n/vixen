@@ -581,6 +581,41 @@ button.link:hover { text-decoration: underline; filter: none; }
 #settings-dirty { color: var(--accent); font-size: 10px; }
 #settings-dirty:empty { display: none; }
 
+/* ---- settings layout: secondary sidebar + one pane at a time --------------- */
+.settings-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 200px minmax(0, 1fr); }
+.set-nav { border-right: 1px solid var(--line); padding: 14px 10px; overflow-y: auto; background: color-mix(in srgb, var(--bg) 70%, var(--side)); }
+.set-group { font-size: 10.5px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; padding: 14px 10px 5px; }
+.set-group:empty { padding: 8px 0 0; margin: 8px 6px 0; border-top: 1px solid var(--line); }
+.set-item {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; align-items: center;
+  width: 100%; padding: 6px 10px; border-radius: 7px; background: none; box-shadow: none; text-align: left; color: var(--text);
+}
+.set-item .ico { width: 16px; height: 16px; color: var(--muted); }
+.set-item:hover { background: var(--hover); filter: none; }
+.set-item.on { background: var(--select); }
+.set-item.on .ico { color: var(--accent); }
+.set-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.set-content { padding-top: 22px; }
+.set-content .settings-body { max-width: 860px; }
+.pane-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.pane-head h2 { margin: 0; font-size: 19px; letter-spacing: -0.01em; }
+.pane-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+.pane-head p:empty { display: none; }
+.scope { flex: none; font-size: 11px; padding: 3px 9px; border-radius: 10px; white-space: nowrap; margin-top: 4px; }
+.scope.save { color: var(--accent); background: var(--select); }
+.scope.now { color: var(--green); background: var(--green-soft); }
+.set-pane .group-box + .group-box { margin-top: 14px; }
+.pane-actions { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
+.pane-note { font-size: 11.5px; color: var(--muted); margin: 12px 4px 0; }
+.set-pane .row:has(.segmented:not(#pref-tray)), .set-pane .row:has(.tool-toggles) { grid-template-columns: 1fr; gap: 8px; }
+.set-pane .row:has(.segmented:not(#pref-tray)) .ctl, .set-pane .row:has(.tool-toggles) .ctl { justify-content: flex-start; }
+.set-pane .tool-toggles { flex-wrap: wrap; gap: 8px 18px; }
+.set-pane .tool-toggles label { white-space: nowrap; }
+.set-pane .targets-pane { grid-template-columns: 210px minmax(0, 1fr); }
+.about { display: flex; align-items: center; gap: 14px; margin: 4px 0 18px; }
+.about-logo { width: 44px; height: 48px; color: var(--text); fill: currentColor; }
+.about-name { font-size: 16px; font-weight: 600; }
+
 /* ---- log sheet ---------------------------------------------------------- */
 .sheet {
   position: fixed; top: 0; right: 0; bottom: 0;

@@ -294,6 +294,15 @@ fn float_expand(app: AppHandle, state: State<AppState>, on: bool) -> Option<Expa
     }
 }
 
+/// Open a web link (https only) in the default browser.
+#[tauri::command]
+fn open_url(url: String) -> Res<()> {
+    if !url.starts_with("https://") {
+        return Err("only https links can be opened".into());
+    }
+    std::process::Command::new("open").arg(&url).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn reload(app: AppHandle) {
     start(&app);
@@ -369,6 +378,7 @@ fn main() {
             save_settings,
             test_target,
             open_config,
+            open_url,
             panel_action,
             agent_action,
             get_prefs,
