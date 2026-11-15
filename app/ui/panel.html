@@ -10,15 +10,21 @@
   <div class="panel">
     <header class="p-head" title="Drag to move · double-click to fit content">
       <svg class="logo"><use href="#logo"/></svg>
-      <div class="p-title"><b>Vixen</b><span id="p-sub"></span></div>
       <div class="p-stats" id="p-stats"></div>
+      <span class="spacer"></span>
+      <span id="p-sub"></span>
       <button class="ghost icon" id="p-refresh" title="Refresh now">↻</button>
     </header>
     <div id="p-banner"></div>
     <div class="p-body">
       <section class="p-col" id="p-left">
+        <div class="p-sec" id="p-agents-sec">
+          <div class="p-label">Agents <span class="count" id="n-agents"></span></div>
+          <div id="p-usage" class="p-usage"></div>
+          <div id="p-agents"></div>
+        </div>
         <div class="p-sec">
-          <div class="p-label">Running <span class="count" id="n-running"></span></div>
+          <div class="p-label">Jobs running <span class="count" id="n-running"></span></div>
           <div id="p-jobs"></div>
         </div>
         <div class="p-sec">

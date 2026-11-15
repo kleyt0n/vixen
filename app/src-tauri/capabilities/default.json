@@ -4,7 +4,8 @@
   "description": "App windows: events, notifications, window drag/resize",
   "windows": [
     "main",
-    "panel"
+    "panel",
+    "float"
   ],
   "permissions": [
     "core:default",

@@ -8,7 +8,12 @@ const $ = (sel) => document.querySelector(sel);
 const S = {
   snap: null,
   error: null,
-  view: "all",          // "all" | target name
+  page: "home",         // "home" | "compute" | "agents"
+  tool: "all",          // agents page: "all" | tool id
+  agentFilter: "active",// "active" (working + waiting) | "all"
+  agentQuery: "",
+  agentOpen: new Set(), // expanded agent rows
+  view: "all",          // compute page: "all" | target name
   filter: "all",        // "active" | "queued" | "all"
   query: "",
   open: new Set(),      // expanded job keys
@@ -64,10 +69,14 @@ function renderNow() {
   frame = requestAnimationFrame(() => {
     frame = 0;
     renderNav();
-    renderHeader();
-    renderBanner();
-    renderGpus();
-    renderJobs();
+    if (S.page === "home") renderHome();
+    if (S.page === "agents") renderAgents();
+    if (S.page === "compute") {
+      renderHeader();
+      renderBanner();
+      renderGpus();
+      renderJobs();
+    }
     tick();
   });
 }
@@ -86,24 +95,230 @@ function targetDot(t) {
   return "wait";
 }
 
+// ---- navigation -------------------------------------------------------------
+
+const PAGES = ["home", "compute", "agents"];
+function showPage(page) {
+  S.page = page;
+  if (CFG.open) closeSettings();
+  for (const p of PAGES) $(`#view-${p === "compute" ? "dash" : p}`).hidden = p !== page;
+  render();
+}
+
+const agentList = () => S.snap?.agents ?? [];
+const running = (t) => t.jobs.filter((j) => j.state === "running" || j.state === "completing").length;
+
 function renderNav() {
   const ts = S.snap?.targets ?? [];
-  const running = (t) => t.jobs.filter((j) => j.state === "running" || j.state === "completing").length;
-  const all = ts.reduce((n, t) => n + running(t), 0);
-  const on = (v) => (!CFG.open && S.view === v ? "on" : "");
-  let html = `<button class="nav-item ${on("all")}" data-view="all">
-      <span class="dot ${ts.every((t) => t.ok) && ts.length ? "ok" : ts.some((t) => !t.ok && t.error) ? "stale" : "wait"}"></span>
-      <span class="nav-name">Overview</span><span class="nav-badge">${all || ""}</span></button>
-    <div class="nav-label">Targets</div>`;
+  const ags = agentList();
+  const on = (page, ok = true) => (!CFG.open && S.page === page && ok ? "on" : "");
+  const jobsRunning = ts.reduce((n, t) => n + running(t), 0);
+  const working = ags.filter((a) => a.state === "working").length;
+  const waiting = ags.filter((a) => a.state === "waiting").length;
+  const attn = attention().length;
+  const health = ts.every((t) => t.ok) && ts.length ? "ok" : ts.some((t) => !t.ok && t.error) ? "stale" : "wait";
+
+  let html = `<button class="nav-item ${on("home")}" data-page="home">
+      <span class="nav-ico">⌂</span><span class="nav-name">Home</span>
+      <span class="nav-badge ${attn ? "hot" : ""}">${attn || ""}</span></button>
+    <div class="nav-label">Compute</div>
+    <button class="nav-item ${on("compute", S.view === "all")}" data-page="compute" data-view="all">
+      <span class="dot ${health}"></span><span class="nav-name">All machines</span><span class="nav-badge">${jobsRunning || ""}</span></button>`;
   for (const t of ts) {
     const r = running(t), q = t.jobs.filter(isQueued).length;
     const badge = [r ? `${r}▸` : "", q ? `${q}` : ""].filter(Boolean).join(" · ");
-    html += `<button class="nav-item ${on(t.name)}" data-view="${esc(t.name)}" title="${esc(t.error ?? `${t.kind} · ${t.latency_ms} ms`)}">
+    html += `<button class="nav-item sub ${on("compute", S.view === t.name)}" data-page="compute" data-view="${esc(t.name)}" title="${esc(t.error ?? `${t.kind} · ${t.latency_ms} ms`)}">
       <span class="dot ${targetDot(t)}"></span>
-      <span class="nav-name">${esc(t.name)}</span><span class="nav-badge">${badge}</span>
-      <span class="nav-kind">${esc(t.kind)}</span></button>`;
+      <span class="nav-name">${esc(t.name)}</span><span class="nav-badge">${badge}</span></button>`;
+  }
+  html += `<div class="nav-label">Agents</div>
+    <button class="nav-item ${on("agents", S.tool === "all")}" data-page="agents" data-tool="all">
+      <span class="dot ${working ? "ok" : waiting ? "stale" : ""}"></span><span class="nav-name">All agents</span>
+      <span class="nav-badge">${[working && `${working}▸`, waiting && `${waiting}◆`].filter(Boolean).join(" · ")}</span></button>`;
+  for (const id of Object.keys(TOOLS)) {
+    const mine = ags.filter((a) => a.tool === id);
+    if (!mine.length) continue;
+    const w = mine.filter((a) => a.state === "working").length, q = mine.filter((a) => a.state === "waiting").length;
+    html += `<button class="nav-item sub ${on("agents", S.tool === id)}" data-page="agents" data-tool="${id}">
+      ${toolChip(id, "sm")}<span class="nav-name">${TOOLS[id].label}</span>
+      <span class="nav-badge">${[w && `${w}▸`, q && `${q}◆`].filter(Boolean).join(" · ") || mine.length}</span></button>`;
   }
   setHTML($("#targets"), html);
+}
+
+// ---- agents -----------------------------------------------------------------
+
+const agentKey = (a) => `${a.tool}::${a.id}`;
+const kTokens = fmtTokens;
+const STATE_LABEL = { working: "Working", waiting: "Waiting for you", idle: "Idle" };
+
+function agentRow(a) {
+  const k = agentKey(a);
+  const open = S.agentOpen.has(k);
+  const place = [a.project, a.branch].filter(Boolean).join(" · ");
+  const ctx = a.context_tokens == null ? "" : a.context_window
+    ? `<div class="ctx" title="${kTokens(a.context_tokens)} of ${kTokens(a.context_window)} context"><div class="track"><div class="fill ${a.context_tokens / a.context_window > 0.85 ? "amber" : "blue"}" style="width:${Math.min(100, (100 * a.context_tokens) / a.context_window).toFixed(1)}%"></div></div><span>${kTokens(a.context_tokens)}</span></div>`
+    : `<span class="faint">${kTokens(a.context_tokens)} ctx</span>`;
+  let html = `<div class="agent ${open ? "open" : ""}" data-akey="${esc(k)}">
+    ${toolChip(a.tool)}
+    <div class="cell"><div class="l1 name" title="${esc(a.title)}">${esc(a.title)}</div>
+      <div class="l2">${esc(place || a.cwd || "")}${a.model ? ` · ${esc(a.model)}` : ""}</div></div>
+    <div class="cell"><span class="pill ${a.state === "working" ? "running" : a.state === "waiting" ? "held" : ""}">${a.state}</span></div>
+    <div class="cell num muted"><span data-since="${a.updated_at}"></span></div>
+    <div class="cell">${ctx}</div>
+    <div class="cell"><button class="more" data-aact="toggle">${open ? "▾" : "▸"}</button></div>
+  </div>`;
+  if (open) {
+    const rows = [
+      ["Tool", `${TOOLS[a.tool]?.label ?? a.tool}${a.source ? ` · ${a.source}` : ""}`],
+      a.cwd && ["Folder", a.cwd],
+      a.branch && ["Branch", a.branch],
+      a.model && ["Model", a.model],
+      a.context_tokens != null && ["Context", `${kTokens(a.context_tokens)}${a.context_window ? ` of ${kTokens(a.context_window)}` : ""} tokens`],
+      a.started_at && ["Started", `${clock(a.started_at)}`],
+      ["Session", a.id],
+    ].filter(Boolean);
+    const btn = (act, label) => `<button data-aact="${act}">${label}</button>`;
+    html += `<div class="detail agent-detail" data-akey="${esc(k)}">
+      <dl>${rows.map(([kk, v]) => `<dt>${esc(kk)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+      ${a.last_prompt ? `<div class="bubble you"><b>You</b>${esc(a.last_prompt)}</div>` : ""}
+      ${a.last_reply ? `<div class="bubble"><b>${esc(TOOLS[a.tool]?.label ?? "Agent")}</b>${esc(a.last_reply)}</div>` : ""}
+      <div class="detail-actions">
+        ${a.resume ? btn("resume", "Resume in Terminal") : ""}
+        ${a.tool === "antigravity" ? btn("app", "Open Antigravity") : ""}
+        ${a.cwd ? btn("folder", "Open folder") : ""}
+        ${a.file ? btn("reveal", "Reveal transcript") : ""}
+      </div></div>`;
+  }
+  return html;
+}
+
+const usageList = () => S.snap?.usage ?? [];
+const REFRESH_HINT = {
+  claude_code: "Turn on Live Claude limits in Settings, or run /usage in Claude Code",
+  codex: "Codex updates these as you use it",
+};
+
+function usageCard(u) {
+  const label = TOOLS[u.tool]?.label ?? u.tool;
+  const stale = u.limits.some((l) => l.resets_at && l.resets_at <= now());
+  const asOf = u.limits_as_of ? `limits as of <span data-since="${u.limits_as_of}"></span>` : "";
+  return `<div class="usage-card">
+    <div class="uc-head">${toolChip(u.tool, "lg")}<div class="cell"><div class="l1 name">${esc(label)}</div>
+      <div class="l2">${[u.plan && esc(u.plan), asOf].filter(Boolean).join(" · ")}</div></div></div>
+    <div class="limits">${u.limits.map((l) => limitBar(l)).join("") || `<div class="faint small">No plan limits recorded yet.</div>`}</div>
+    ${stale ? `<div class="uc-note">Some limits have reset since. ${esc(REFRESH_HINT[u.tool] ?? "")}.</div>` : ""}
+    <div class="uc-tokens">
+      <div><b>${fmtTokens(u.tokens_5h)}</b><span>tokens · last 5h</span></div>
+      <div><b>${fmtTokens(u.tokens_today)}</b><span>tokens · today</span></div>
+      <div><b>${u.sessions_today}</b><span>sessions today</span></div>
+    </div></div>`;
+}
+
+function renderAgents() {
+  const usage = usageList().filter((u) => S.tool === "all" || u.tool === S.tool);
+  setHTML($("#usage"), usage.map(usageCard).join(""));
+  const q = S.agentQuery.toLowerCase();
+  const list = agentList()
+    .filter((a) => S.tool === "all" || a.tool === S.tool)
+    .filter((a) => S.agentFilter === "all" || a.state !== "idle")
+    .filter((a) => !q || `${a.title} ${a.project ?? ""} ${a.branch ?? ""} ${a.cwd ?? ""} ${a.model ?? ""}`.toLowerCase().includes(q));
+  const all = agentList().filter((a) => S.tool === "all" || a.tool === S.tool);
+  $("#agents-title").textContent = S.tool === "all" ? "Agents" : TOOLS[S.tool]?.label ?? S.tool;
+  const w = all.filter((a) => a.state === "working").length, wt = all.filter((a) => a.state === "waiting").length;
+  $("#agents-sub").textContent = `${w} working · ${wt} waiting · ${all.length} sessions`;
+  if (!list.length) {
+    const hint = all.length
+      ? `No ${S.agentFilter === "active" ? "active " : ""}sessions match. ${S.agentFilter === "active" ? "Switch to All to see idle ones." : ""}`
+      : "No agent sessions in the window. Start Claude Code, Codex or Antigravity and they appear here.";
+    return setHTML($("#agents"), `<div class="empty pad">${hint}</div>`);
+  }
+  let html = "";
+  for (const st of ["working", "waiting", "idle"]) {
+    const group = list.filter((a) => a.state === st);
+    if (!group.length) continue;
+    html += `<div class="agent-group"><h2 class="section-title">${STATE_LABEL[st]} <span class="count">${group.length}</span></h2>
+      <div class="agent-list">${group.map(agentRow).join("")}</div></div>`;
+  }
+  setHTML($("#agents"), html);
+}
+
+// ---- home -------------------------------------------------------------------
+
+/// Things that want a human: agents waiting, jobs past their limit or failed, machines down.
+function attention() {
+  const items = [];
+  for (const a of agentList().filter((a) => a.state === "waiting")) items.push({ kind: "agent", a, at: a.updated_at });
+  for (const t of S.snap?.targets ?? []) {
+    if (t.error && !t.updated_at) items.push({ kind: "down", t, at: 0 });
+    for (const j of t.jobs) {
+      if (j.eta?.exceeds_limit) items.push({ kind: "limit", t, j, at: j.eta.finish_at });
+      else if (j.state === "failed") items.push({ kind: "failed", t, j, at: 0 });
+    }
+  }
+  return items;
+}
+
+function attnRow(it) {
+  if (it.kind === "agent") {
+    const a = it.a;
+    return `<div class="attn-row" data-akey="${esc(agentKey(a))}">${toolChip(a.tool)}
+      <div class="cell"><div class="l1 name">${esc(a.title)}</div><div class="l2">${esc(TOOLS[a.tool]?.label)} is waiting for you · ${esc(a.project ?? "")} · <span data-since="${a.updated_at}"></span></div></div>
+      ${a.resume ? `<button data-aact="resume">Resume</button>` : `<button data-aact="open">Open</button>`}</div>`;
+  }
+  if (it.kind === "down") {
+    return `<div class="attn-row" data-target="${esc(it.t.name)}"><span class="attn-ico down">!</span>
+      <div class="cell"><div class="l1 name">${esc(it.t.name)} is unreachable</div><div class="l2">${esc(it.t.error)}</div></div>
+      <button data-hact="retry">Retry</button></div>`;
+  }
+  const j = it.j;
+  const msg = it.kind === "limit" ? `will pass its time limit · ETA ${clock(j.eta.finish_at)}` : "failed";
+  return `<div class="attn-row" data-target="${esc(it.t.name)}"><span class="attn-ico warn">⏱</span>
+    <div class="cell"><div class="l1 name">${esc(j.name)} <span class="faint mono small">${esc(j.id)}</span></div><div class="l2">${esc(it.t.name)} · ${msg}</div></div>
+    <button data-hact="job">View</button></div>`;
+}
+
+function renderHome() {
+  const ts = S.snap?.targets ?? [];
+  const ags = agentList();
+  const items = attention();
+  $("#home-sub").innerHTML = `${ts.length} machines · ${ags.length} agent sessions · <span data-ago="${S.snap?.taken_at ?? 0}"></span>`;
+  $("#attn-count").textContent = items.length || "";
+  setHTML($("#attn"), items.length ? items.map(attnRow).join("") : `<div class="all-clear">✓ Nothing needs you right now.</div>`);
+
+  // Compute card
+  const gpus = ts.flatMap((t) => t.gpus);
+  const busy = gpus.filter((g) => (g.util ?? 0) >= 10).length;
+  const avg = gpus.length ? gpus.reduce((x, g) => x + (g.util ?? 0), 0) / gpus.length : null;
+  const jobs = ts.flatMap((t) => t.jobs.map((j) => ({ t: t.name, j })));
+  const run = jobs.filter(({ j }) => j.state === "running").sort((a, b) => (a.j.eta?.finish_at ?? Infinity) - (b.j.eta?.finish_at ?? Infinity));
+  const queued = jobs.filter(({ j }) => isQueued(j)).length;
+  const stat = (v, l) => `<div class="hstat"><b>${v}</b><span>${l}</span></div>`;
+  setHTML($("#home-compute"), `<div class="card-head"><h2>Compute</h2><button class="ghost" data-go="compute">Open →</button></div>
+    <div class="hstats">${stat(gpus.length ? `${busy}/${gpus.length}` : "–", "GPUs busy")}${stat(avg != null ? `${avg.toFixed(0)}%` : "–", "avg util")}${stat(run.length, "running")}${stat(queued, "queued")}</div>
+    <div class="mini-list">${run.slice(0, 5).map(({ t, j }) => `<div class="mini" data-go="compute" data-view="${esc(t)}">
+        <div class="mini-top"><span class="name">${esc(j.name)} <span class="faint mono small">${esc(j.id)}</span></span>${j.eta ? `<b class="${j.eta.exceeds_limit ? "warn" : ""}"><span data-eta="${j.eta.finish_at}"></span></b>` : ""}</div>
+        ${j.progress ? `<div class="track"><div class="fill green" style="width:${(j.progress.fraction * 100).toFixed(1)}%"></div></div>` : ""}
+        <div class="l2">${esc(t)}${j.progress ? ` · ${pct(j.progress.fraction)}` : ""}</div></div>`).join("") || `<div class="empty">No jobs running.</div>`}</div>`);
+
+  // Agents card
+  const working = ags.filter((a) => a.state === "working");
+  const waiting = ags.filter((a) => a.state === "waiting").length;
+  const today = ags.filter((a) => now() - a.updated_at < 86400).length;
+  setHTML($("#home-agents"), `<div class="card-head"><h2>Agents</h2><button class="ghost" data-go="agents">Open →</button></div>
+    <div class="hstats">${stat(working.length, "working")}${stat(waiting, "waiting")}${stat(today, "sessions today")}${stat(new Set(ags.map((a) => a.project).filter(Boolean)).size, "projects")}</div>
+    <div class="home-limits">${usageList().map((u) => `<div class="hl">${toolChip(u.tool, "sm")}<div class="hl-bars">${u.limits.map((l) => limitBar(l, true)).join("")}</div><span class="faint small">${fmtTokens(u.tokens_today)} today</span></div>`).join("")}</div>
+    <div class="mini-list">${working.slice(0, 5).map((a) => `<div class="mini agent-mini" data-go="agents" data-akey="${esc(agentKey(a))}">
+        ${toolChip(a.tool, "sm")}<div class="cell"><div class="mini-top"><span class="name">${esc(a.title)}</span><span class="faint small"><span data-since="${a.updated_at}"></span></span></div>
+        <div class="l2">${esc([a.project, a.branch].filter(Boolean).join(" · "))}</div></div></div>`).join("") || `<div class="empty">No agents working.</div>`}</div>`);
+}
+
+async function agentAct(k, action) {
+  const a = agentList().find((x) => agentKey(x) === k);
+  if (!a) return;
+  if (action === "open") { S.tool = "all"; S.agentOpen.add(k); return showPage("agents"); }
+  try { toast(await invoke("agent_action", { tool: a.tool, id: a.id, action })); }
+  catch (e) { toast(String(e), true); }
 }
 
 function renderHeader() {
@@ -295,6 +510,10 @@ function tick() {
     const t = Number(el.dataset.ago);
     el.textContent = t ? `updated ${human(n - t)} ago` : "connecting…";
   });
+  document.querySelectorAll("[data-since]").forEach((el) => {
+    const t = Number(el.dataset.since);
+    el.textContent = t ? `${human(n - t)} ago` : "";
+  });
 }
 setInterval(tick, 1000);
 
@@ -376,12 +595,48 @@ async function refreshAll(target = null) {
 // ---- events -----------------------------------------------------------------
 
 $("#targets").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-view]");
+  const b = e.target.closest("[data-page]");
   if (!b) return;
-  S.view = b.dataset.view;
-  closeSettings();
+  if (b.dataset.view) S.view = b.dataset.view;
+  if (b.dataset.tool) S.tool = b.dataset.tool;
+  showPage(b.dataset.page);
+});
+
+$("#agents").addEventListener("click", (e) => {
+  const row = e.target.closest("[data-akey]");
+  if (!row) return;
+  const k = row.dataset.akey;
+  const act = e.target.closest("[data-aact]")?.dataset.aact;
+  if (act && act !== "toggle") return agentAct(k, act);
+  if (row.classList.contains("agent-detail") && !act) return;
+  S.agentOpen.has(k) ? S.agentOpen.delete(k) : S.agentOpen.add(k);
   render();
 });
+$("#agent-filter").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-af]");
+  if (!b) return;
+  S.agentFilter = b.dataset.af;
+  document.querySelectorAll("#agent-filter button").forEach((x) => x.classList.toggle("on", x === b));
+  render();
+});
+$("#agent-search").addEventListener("input", (e) => { S.agentQuery = e.target.value.trim(); render(); });
+
+$("#view-home").addEventListener("click", (e) => {
+  const act = e.target.closest("[data-aact]");
+  const akey = e.target.closest("[data-akey]")?.dataset.akey;
+  if (act && akey) return agentAct(akey, act.dataset.aact);
+  const h = e.target.closest("[data-hact]");
+  const tname = e.target.closest("[data-target]")?.dataset.target;
+  if (h?.dataset.hact === "retry") return refreshAll(tname);
+  if (h?.dataset.hact === "job" || (tname && !h)) { S.view = tname; return showPage("compute"); }
+  const go = e.target.closest("[data-go]");
+  if (go) {
+    if (go.dataset.view) S.view = go.dataset.view;
+    if (akey) { S.tool = "all"; S.agentOpen.add(akey); }
+    return showPage(go.dataset.go);
+  }
+});
+$("#home-refresh").addEventListener("click", () => refreshAll());
 
 $("#filter").addEventListener("click", (e) => {
   const b = e.target.closest("[data-f]");
@@ -452,13 +707,13 @@ document.addEventListener("keydown", (e) => {
     if (S.query) { $("#search").value = ""; S.query = ""; return render(); }
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "r") { e.preventDefault(); refreshAll(); }
-  if (e.key === "/" && !CFG.open && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) { e.preventDefault(); $("#search").focus(); }
-  if (/^[1-9]$/.test(e.key) && e.metaKey) {
-    const ts = S.snap?.targets ?? [];
-    const i = Number(e.key) - 1;
-    S.view = i === 0 ? "all" : ts[i - 1]?.name ?? S.view;
-    closeSettings();
-    render();
+  if (e.key === "/" && !CFG.open && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) {
+    e.preventDefault();
+    (S.page === "agents" ? $("#agent-search") : $("#search")).focus();
+  }
+  if (/^[1-3]$/.test(e.key) && e.metaKey) {
+    e.preventDefault();
+    showPage(PAGES[Number(e.key) - 1]);
   }
 });
 
@@ -488,9 +743,11 @@ const TARGET_DEFAULTS = {
   all_users: false, interval: null, command: null, ssh_args: [], enabled: true,
 };
 const clone = (x) => JSON.parse(JSON.stringify(x));
+const AGENT_DEFAULTS = { enabled: true, window_hours: 24, interval: 5, claude_code: true, codex: true, antigravity: true, live_claude_limits: false };
 const withDefaults = (cfg) => ({
   interval: cfg.interval ?? 300,
   tail_bytes: cfg.tail_bytes ?? 6144,
+  agents: { ...AGENT_DEFAULTS, ...(cfg.agents ?? {}) },
   targets: (cfg.targets ?? cfg.target ?? []).map((t) => ({ ...clone(TARGET_DEFAULTS), ...t })),
 });
 // Cloud kinds polled through a local CLI: kind → [label, default command, has uvx fallback].
@@ -515,6 +772,7 @@ function describeTarget(t) {
 function validate(cfg) {
   const errs = { general: {}, targets: [] };
   if (!(cfg.interval >= 2)) errs.general.interval = "At least 2 seconds";
+  if (!(cfg.agents?.window_hours >= 1)) errs.general.window = "At least 1 hour";
   if (!(cfg.tail_bytes >= 1024)) errs.general.tail = "At least 1 KB";
   const names = new Map();
   cfg.targets.forEach((t) => names.set(t.name.trim(), (names.get(t.name.trim()) ?? 0) + 1));
@@ -530,9 +788,53 @@ function validate(cfg) {
   return errs;
 }
 
+// App preferences (menu-bar title, floating button) live on the Rust side and apply instantly.
+let PREFS = null;
+async function loadPrefs() {
+  try { PREFS = await invoke("get_prefs"); }
+  catch { PREFS = { tray_title: "count_eta", float_button: false, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true } }; }
+  renderPrefs();
+}
+function renderPrefs() {
+  if (!PREFS) return;
+  document.querySelectorAll("#pref-tray [data-tray]").forEach((b) => b.classList.toggle("on", b.dataset.tray === PREFS.tray_title));
+  $("#pref-float").checked = !!PREFS.float_button;
+  document.querySelectorAll("#pref-events [data-ev]").forEach((el) => (el.checked = !!PREFS.events?.[el.dataset.ev]));
+  if (document.activeElement !== $("#pref-limit")) $("#pref-limit").value = PREFS.limit_alert ?? 80;
+  const style = PREFS.float_style || "kit";
+  setHTML($("#pref-fox"), Object.entries(FOXES).map(([id, f]) =>
+    `<button class="fox-card ${id === style ? "on" : ""}" data-fox="${id}" title="${esc(f.note)}">${foxSvg(id, "fox-prev")}<span>${esc(f.name)}</span></button>`).join(""));
+  $("#pref-fox").classList.toggle("off", !PREFS.float_button);
+}
+async function savePrefs(change) {
+  PREFS = { ...PREFS, ...change };
+  renderPrefs();
+  await invoke("set_prefs", { prefs: PREFS }).catch((e) => toast(String(e), true));
+}
+$("#pref-tray").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tray]");
+  if (b) savePrefs({ tray_title: b.dataset.tray });
+});
+$("#pref-float").addEventListener("change", (e) => savePrefs({ float_button: e.target.checked }));
+$("#pref-events").addEventListener("change", (e) => {
+  const k = e.target.dataset.ev;
+  if (k) savePrefs({ events: { ...PREFS.events, [k]: e.target.checked } });
+});
+$("#pref-limit").addEventListener("change", (e) => {
+  const v = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+  e.target.value = v;
+  savePrefs({ limit_alert: v });
+});
+$("#pref-fox").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-fox]");
+  // Picking a fox also turns the floating button on.
+  if (b) savePrefs({ float_style: b.dataset.fox, float_button: true });
+});
+
 async function openSettings() {
+  loadPrefs();
   CFG.open = true;
-  $("#view-dash").hidden = true;
+  for (const p of PAGES) $(`#view-${p === "compute" ? "dash" : p}`).hidden = true;
   $("#view-settings").hidden = false;
   $("#sheet").hidden = true;
   if (!CFG.draft) await loadSettings();
@@ -544,7 +846,7 @@ function closeSettings() {
   if (!CFG.open) return;
   CFG.open = false;
   $("#view-settings").hidden = true;
-  $("#view-dash").hidden = false;
+  $(`#view-${S.page === "compute" ? "dash" : S.page}`).hidden = false;
   updateSettingsChrome();
   render();
 }
@@ -592,6 +894,12 @@ function renderSettings() {
   $("#set-path").title = CFG.path;
   $("#g-interval").value = d.interval;
   $("#g-tail").value = Math.round(d.tail_bytes / 1024);
+  document.querySelectorAll("#agent-cfg [data-ag]").forEach((el) => {
+    const v = d.agents[el.dataset.ag];
+    if (el.type === "checkbox") el.checked = !!v;
+    else el.value = v;
+    if (el.dataset.ag !== "enabled") el.disabled = !d.agents.enabled;
+  });
   CFG.sel = Math.min(CFG.sel, Math.max(0, d.targets.length - 1));
   renderTargetList();
   renderTargetForm();
@@ -832,6 +1140,14 @@ $("#set-open").addEventListener("click", () => invoke("open_config").catch((e) =
 const zoom = () => appWindow.toggleMaximize().catch(() => {});
 document.querySelectorAll(".toolbar, .traffic, .brand").forEach((el) => draggable(el, zoom));
 
+$("#agent-cfg").addEventListener("input", (e) => {
+  const f = e.target.dataset.ag;
+  if (!f || !CFG.draft) return;
+  CFG.draft.agents[f] = e.target.type === "checkbox" ? e.target.checked : Number(e.target.value);
+  if (f === "enabled") renderSettings();
+  else updateSettingsChrome();
+});
+
 // ---- boot -------------------------------------------------------------------
 
 listen("snapshot", (e) => {
@@ -842,9 +1158,14 @@ listen("snapshot", (e) => {
 });
 listen("open-settings", () => openSettings());
 listen("focus-target", (e) => {
-  S.view = (S.snap?.targets ?? []).some((t) => t.name === e.payload) ? e.payload : "all";
-  closeSettings();
-  render();
+  const p = String(e.payload);
+  if (p.startsWith("agent:")) {
+    S.tool = "all";
+    S.agentOpen.add(p.slice(6));
+    return showPage("agents");
+  }
+  S.view = (S.snap?.targets ?? []).some((t) => t.name === p) ? p : "all";
+  showPage("compute");
 });
 listen("config-error", (e) => {
   S.error = e.payload;

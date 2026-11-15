@@ -13,7 +13,7 @@
       <svg class="logo"><use href="#logo"/></svg>
       <span>Vixen</span>
     </div>
-    <nav id="targets" aria-label="Targets"></nav>
+    <nav id="targets" aria-label="Navigation"></nav>
     <footer class="side-foot">
       <button class="nav-item" id="btn-settings" title="Settings (⌘,)">
         <span class="gear">⚙</span><span class="nav-name">Settings</span><span class="nav-badge" id="settings-dirty"></span>
@@ -49,6 +49,67 @@
         </div>
 
         <div class="section-head">
+          <h2 class="section-title">Agents</h2>
+          <span class="muted small">Read from each tool's local session files</span>
+        </div>
+        <div class="group-box" id="agent-cfg">
+          <div class="row">
+            <div><div class="row-title">Watch code agents</div><div class="row-help">Show Claude Code, Codex and Antigravity sessions on this Mac.</div></div>
+            <div class="ctl"><label class="switch"><input type="checkbox" data-ag="enabled"><span></span></label></div>
+          </div>
+          <div class="row">
+            <div><div class="row-title">Tools</div><div class="row-help">Which agents to read.</div></div>
+            <div class="ctl tool-toggles">
+              <label><input type="checkbox" data-ag="claude_code"> Claude Code</label>
+              <label><input type="checkbox" data-ag="codex"> Codex</label>
+              <label><input type="checkbox" data-ag="antigravity"> Antigravity</label>
+            </div>
+          </div>
+          <div class="row">
+            <div><div class="row-title">Live Claude limits</div><div class="row-help">Fetch plan limits every 5 min using Claude Code's saved login (macOS asks once for Keychain access). Off: limits update when you run /usage.</div></div>
+            <div class="ctl"><label class="switch"><input type="checkbox" data-ag="live_claude_limits"><span></span></label></div>
+          </div>
+          <label class="row">
+            <div><div class="row-title">Window</div><div class="row-help">List sessions active within this many hours.</div></div>
+            <div class="unit"><input data-ag="window_hours" type="number" min="1" step="1"><span>h</span></div>
+          </label>
+        </div>
+
+        <div class="section-head">
+          <h2 class="section-title">App</h2>
+          <span class="muted small">Applies immediately</span>
+        </div>
+        <div class="group-box" id="app-prefs">
+          <div class="row">
+            <div><div class="row-title">Menu bar</div><div class="row-help">What appears next to the fox in the menu bar.</div></div>
+            <div class="ctl"><div class="segmented" id="pref-tray">
+              <button data-tray="icon">Icon</button><button data-tray="count">Count</button><button data-tray="count_eta">Count + ETA</button>
+            </div></div>
+          </div>
+          <div class="row">
+            <div><div class="row-title">Floating button</div><div class="row-help">A small fox button above all windows. Click for the summary; drag to move it.</div></div>
+            <div class="ctl"><label class="switch"><input type="checkbox" id="pref-float"><span></span></label></div>
+          </div>
+          <div class="row">
+            <div><div class="row-title">Fox messages</div><div class="row-help">The fox shows a message (close it with ✕) when these happen.</div></div>
+            <div class="ctl tool-toggles" id="pref-events">
+              <label><input type="checkbox" data-ev="started"> Job started</label>
+              <label><input type="checkbox" data-ev="finished"> Finished</label>
+              <label><input type="checkbox" data-ev="failed"> Failed</label>
+              <label><input type="checkbox" data-ev="limits"> Limits</label>
+            </div>
+          </div>
+          <label class="row">
+            <div><div class="row-title">Limit alert</div><div class="row-help">Alert when any agent limit (session, weekly…) reaches this. 0 turns it off.</div></div>
+            <div class="unit"><input id="pref-limit" type="number" min="0" max="100" step="5"><span>%</span></div>
+          </label>
+          <div class="row fox-row">
+            <div><div class="row-title">Fox</div><div class="row-help">Which fox floats on your screen.</div></div>
+            <div class="fox-picker" id="pref-fox"></div>
+          </div>
+        </div>
+
+        <div class="section-head">
           <h2 class="section-title">Targets</h2>
           <button id="t-add" class="ghost">＋ Add target</button>
         </div>
@@ -60,7 +121,51 @@
     </div>
   </main>
 
-  <main id="view-dash">
+  <main id="view-home">
+    <header class="toolbar">
+      <div class="title-block">
+        <h1>Home</h1>
+        <div id="home-sub" class="muted"></div>
+      </div>
+      <span class="spacer"></span>
+      <button id="home-refresh" class="icon" title="Refresh now (⌘R)">↻</button>
+    </header>
+    <div class="content">
+      <div class="home">
+        <section>
+          <h2 class="section-title">Needs you <span id="attn-count" class="count"></span></h2>
+          <div id="attn" class="attn"></div>
+        </section>
+        <div class="home-grid">
+          <section class="card" id="home-compute"></section>
+          <section class="card" id="home-agents"></section>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <main id="view-agents" hidden>
+    <header class="toolbar">
+      <div class="title-block">
+        <h1 id="agents-title">Agents</h1>
+        <div id="agents-sub" class="muted"></div>
+      </div>
+      <span class="spacer"></span>
+      <div class="segmented" id="agent-filter">
+        <button data-af="active" class="on">Active</button>
+        <button data-af="all">All</button>
+      </div>
+      <input id="agent-search" type="search" placeholder="Filter sessions" autocomplete="off" spellcheck="false">
+    </header>
+    <div class="content">
+      <div class="agents">
+        <div id="usage" class="usage-grid"></div>
+        <div id="agents"></div>
+      </div>
+    </div>
+  </main>
+
+  <main id="view-dash" hidden>
     <header class="toolbar">
       <div class="title-block">
         <h1 id="title">Overview</h1>
@@ -123,6 +228,7 @@
   <div id="toast" class="toast" hidden></div>
 
   <script src="common.js"></script>
+  <script src="foxes.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
