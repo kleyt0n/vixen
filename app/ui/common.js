@@ -107,6 +107,58 @@ function limitBar(l, compact = false) {
     <span class="lpct">${reset ? "–" : `${l.percent.toFixed(0)}%`}</span>${compact ? "" : `<span class="lwhen">${when}</span>`}</div>`;
 }
 
+// ---- needs you ----------------------------------------------------------------
+// Things that want a human. Shared by the main window's Home and the menu-bar panel,
+// so both agree on what's dismissed (stored in localStorage, shared by the app's windows).
+
+const DISMISS_KEY = "vixen-dismissed";
+const DISMISS_TTL_S = 7 * 86400;
+
+function readDismissed() {
+  try { return JSON.parse(localStorage.getItem(DISMISS_KEY)) ?? {}; } catch { return {}; }
+}
+function writeDismissed(d) {
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify(d)); } catch {}
+}
+
+/// Waiting agents, unreachable machines, jobs past their limit and failed jobs.
+/// Each item has a key that changes when the situation does: an agent that works and
+/// waits again gets a new key, so a dismissed item comes back only when there's news.
+function needsYou(snap) {
+  const items = [];
+  for (const a of (snap?.agents ?? []).filter((a) => a.state === "waiting")) {
+    items.push({ kind: "agent", a, key: `agent:${a.tool}::${a.id}@${a.updated_at}`, at: a.updated_at });
+  }
+  for (const t of snap?.targets ?? []) {
+    if (t.error && !t.updated_at) items.push({ kind: "down", t, key: `down:${t.name}`, at: 0 });
+    for (const j of t.jobs) {
+      if (j.eta?.exceeds_limit) items.push({ kind: "limit", t, j, key: `late:${t.name}:${j.id}`, at: j.eta.finish_at });
+      else if (j.state === "failed") items.push({ kind: "failed", t, j, key: `failed:${t.name}:${j.id}`, at: 0 });
+    }
+  }
+  // Forget dismissals on evidence only: a machine that's back online, or entries older than a week.
+  const d = readDismissed();
+  const n = now();
+  let changed = false;
+  for (const [k, at] of Object.entries(d)) {
+    const back = k.startsWith("down:") && (snap?.targets ?? []).some((t) => `down:${t.name}` === k && t.ok);
+    if (back || n - at > DISMISS_TTL_S) { delete d[k]; changed = true; }
+  }
+  if (changed) writeDismissed(d);
+  return items.filter((i) => !(i.key in d));
+}
+
+function dismissNeeds(keys) {
+  const d = readDismissed();
+  for (const k of keys) d[k] = now();
+  writeDismissed(d);
+}
+
+/// Re-render when another window dismisses something.
+function onDismissChange(fn) {
+  window.addEventListener("storage", (e) => e.key === DISMISS_KEY && fn());
+}
+
 // ---- window chrome ----------------------------------------------------------
 
 const appWindow = window.__TAURI__.window.getCurrentWindow();

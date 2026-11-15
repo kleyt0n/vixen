@@ -41,7 +41,12 @@ body.panel-body { display: block; overflow: hidden; padding: 0; }
 .need { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 1px 9px; align-items: center; padding: 5px 0; cursor: pointer; }
 .need .n { font-weight: 500; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .need .m { grid-column: 2; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.need button { grid-row: 1 / 3; grid-column: 3; font-size: 11px; padding: 3px 10px; }
+.need .acts { grid-row: 1 / 3; grid-column: 3; display: flex; align-items: center; gap: 4px; }
+.need .acts button:not(.dismiss) { font-size: 11px; padding: 3px 10px; }
+.need .dismiss { width: 20px; height: 20px; padding: 0; border-radius: 50%; display: grid; place-items: center; background: none; box-shadow: none; color: var(--faint); font-size: 10px; }
+.need .dismiss:hover { background: var(--track); color: var(--text); filter: none; }
+.need:hover .dismiss { color: var(--muted); }
+.p-label .link { padding: 0; border: 0; background: none; box-shadow: none; color: var(--accent); font-size: 10.5px; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .need .ico { grid-row: 1 / 3; width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
 .need .ico.down { background: var(--red-soft); color: var(--red); }
 .need .ico.warn { background: var(--amber-soft); color: var(--amber); }

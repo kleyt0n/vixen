@@ -245,37 +245,27 @@ function renderAgents() {
 
 // ---- home -------------------------------------------------------------------
 
-/// Things that want a human: agents waiting, jobs past their limit or failed, machines down.
-function attention() {
-  const items = [];
-  for (const a of agentList().filter((a) => a.state === "waiting")) items.push({ kind: "agent", a, at: a.updated_at });
-  for (const t of S.snap?.targets ?? []) {
-    if (t.error && !t.updated_at) items.push({ kind: "down", t, at: 0 });
-    for (const j of t.jobs) {
-      if (j.eta?.exceeds_limit) items.push({ kind: "limit", t, j, at: j.eta.finish_at });
-      else if (j.state === "failed") items.push({ kind: "failed", t, j, at: 0 });
-    }
-  }
-  return items;
-}
+/// Things that want a human (see needsYou in common.js), minus dismissed ones.
+const attention = () => needsYou(S.snap);
+const dismissBtn = (it) => `<button class="dismiss" data-dismiss="${esc(it.key)}" title="Dismiss">✕</button>`;
 
 function attnRow(it) {
   if (it.kind === "agent") {
     const a = it.a;
     return `<div class="attn-row" data-akey="${esc(agentKey(a))}">${toolChip(a.tool)}
       <div class="cell"><div class="l1 name">${esc(a.title)}</div><div class="l2">${esc(TOOLS[a.tool]?.label)} is waiting for you · ${esc(a.project ?? "")} · <span data-since="${a.updated_at}"></span></div></div>
-      ${a.resume ? `<button data-aact="resume">Resume</button>` : `<button data-aact="open">Open</button>`}</div>`;
+      <div class="attn-acts">${a.resume ? `<button data-aact="resume">Resume</button>` : `<button data-aact="open">Open</button>`}${dismissBtn(it)}</div></div>`;
   }
   if (it.kind === "down") {
     return `<div class="attn-row" data-target="${esc(it.t.name)}"><span class="attn-ico down">!</span>
       <div class="cell"><div class="l1 name">${esc(it.t.name)} is unreachable</div><div class="l2">${esc(it.t.error)}</div></div>
-      <button data-hact="retry">Retry</button></div>`;
+      <div class="attn-acts"><button data-hact="retry">Retry</button>${dismissBtn(it)}</div></div>`;
   }
   const j = it.j;
   const msg = it.kind === "limit" ? `will pass its time limit · ETA ${clock(j.eta.finish_at)}` : "failed";
   return `<div class="attn-row" data-target="${esc(it.t.name)}"><span class="attn-ico warn">⏱</span>
     <div class="cell"><div class="l1 name">${esc(j.name)} <span class="faint mono small">${esc(j.id)}</span></div><div class="l2">${esc(it.t.name)} · ${msg}</div></div>
-    <button data-hact="job">View</button></div>`;
+    <div class="attn-acts"><button data-hact="job">View</button>${dismissBtn(it)}</div></div>`;
 }
 
 function renderHome() {
@@ -283,7 +273,7 @@ function renderHome() {
   const ags = agentList();
   const items = attention();
   $("#home-sub").innerHTML = `${ts.length} machines · ${ags.length} agent sessions · <span data-ago="${S.snap?.taken_at ?? 0}"></span>`;
-  $("#attn-count").textContent = items.length || "";
+  $("#attn-count").innerHTML = items.length ? `${items.length} <button class="link" data-dismiss-all>Clear all</button>` : "";
   setHTML($("#attn"), items.length ? items.map(attnRow).join("") : `<div class="all-clear">✓ Nothing needs you right now.</div>`);
 
   // Compute card
@@ -622,6 +612,9 @@ $("#agent-filter").addEventListener("click", (e) => {
 $("#agent-search").addEventListener("input", (e) => { S.agentQuery = e.target.value.trim(); render(); });
 
 $("#view-home").addEventListener("click", (e) => {
+  const dis = e.target.closest("[data-dismiss]");
+  if (dis) { dismissNeeds([dis.dataset.dismiss]); return render(); }
+  if (e.target.closest("[data-dismiss-all]")) { dismissNeeds(attention().map((i) => i.key)); return render(); }
   const act = e.target.closest("[data-aact]");
   const akey = e.target.closest("[data-akey]")?.dataset.akey;
   if (act && akey) return agentAct(akey, act.dataset.aact);
@@ -1147,6 +1140,8 @@ $("#agent-cfg").addEventListener("input", (e) => {
   if (f === "enabled") renderSettings();
   else updateSettingsChrome();
 });
+
+onDismissChange(() => render());
 
 // ---- boot -------------------------------------------------------------------
 

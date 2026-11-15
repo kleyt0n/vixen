@@ -49,14 +49,14 @@ function renderNow() {
   const gpus = ts.flatMap((t) => t.gpus);
   const busy = gpus.filter((g) => (g.util ?? 0) >= 10).length;
   const avg = gpus.length ? Math.round(gpus.reduce((s, g) => s + (g.util ?? 0), 0) / gpus.length) : null;
-  const down = ts.filter((t) => t.error && !t.updated_at);
-  const late = running.filter(({ j }) => j.eta?.exceeds_limit);
+  const needsItems = needsYou(snap);
   const next = running.find(({ j }) => j.eta);
 
   // Header: the one thing that matters most, in words.
-  const asks = waiting.length + down.length + late.length;
+  const asks = needsItems.length;
+  const agentAsks = needsItems.filter((i) => i.kind === "agent").length;
   $("#p-title").textContent = error ? "Config needs attention"
-    : waiting.length ? `${plural(waiting.length, "agent")} waiting for you`
+    : agentAsks && agentAsks === asks ? `${plural(agentAsks, "agent")} waiting for you`
     : asks ? `${plural(asks, "thing")} need${asks === 1 ? "s" : ""} you`
     : "All clear";
   $("#p-sub").textContent = [
@@ -71,17 +71,25 @@ function renderNow() {
   ].join(""));
   setHTML($("#p-banner"), error ? `<div class="banner"><span class="msg">${esc(error)}</span></div>` : "");
 
-  // Needs you: waiting agents, then machines down and jobs about to overrun.
-  const needs = [
-    ...waiting.map((a) => `<div class="need" data-agent="${esc(`${a.tool}::${a.id}`)}" title="${esc(a.title)}">${toolChip(a.tool, "sm")}
-      <span class="n">${esc(a.title)}</span><span class="m">${esc([a.project, a.branch].filter(Boolean).join(" · "))} · <span data-since="${a.updated_at}"></span></span>
-      ${a.resume ? `<button data-resume="${esc(`${a.tool}::${a.id}`)}">Resume</button>` : ""}</div>`),
-    ...down.map((t) => `<div class="need" data-target="${esc(t.name)}"><span class="ico down">!</span>
-      <span class="n">${esc(t.name)} unreachable</span><span class="m" title="${esc(t.error)}">${esc(t.error)}</span></div>`),
-    ...late.map(({ t, j }) => `<div class="need" data-target="${esc(t)}"><span class="ico warn">⏱</span>
-      <span class="n">${esc(j.name)} will pass its limit</span><span class="m">${esc(t)} · ETA ${esc(clock(j.eta.finish_at))}</span></div>`),
-  ];
+  // Needs you: waiting agents, machines down, jobs about to overrun or failed. Each can be dismissed.
+  const x = (it) => `<button class="dismiss" data-dismiss="${esc(it.key)}" title="Dismiss">✕</button>`;
+  const needs = needsItems.map((it) => {
+    if (it.kind === "agent") {
+      const a = it.a;
+      return `<div class="need" data-agent="${esc(`${a.tool}::${a.id}`)}" title="${esc(a.title)}">${toolChip(a.tool, "sm")}
+        <span class="n">${esc(a.title)}</span><span class="m">${esc([a.project, a.branch].filter(Boolean).join(" · "))} · <span data-since="${a.updated_at}"></span></span>
+        <span class="acts">${a.resume ? `<button data-resume="${esc(`${a.tool}::${a.id}`)}">Resume</button>` : ""}${x(it)}</span></div>`;
+    }
+    if (it.kind === "down") {
+      return `<div class="need" data-target="${esc(it.t.name)}"><span class="ico down">!</span>
+        <span class="n">${esc(it.t.name)} unreachable</span><span class="m" title="${esc(it.t.error)}">${esc(it.t.error)}</span><span class="acts">${x(it)}</span></div>`;
+    }
+    const what = it.kind === "limit" ? `will pass its limit · ETA ${clock(it.j.eta.finish_at)}` : "failed";
+    return `<div class="need" data-target="${esc(it.t.name)}"><span class="ico ${it.kind === "failed" ? "down" : "warn"}">${it.kind === "failed" ? "✕" : "⏱"}</span>
+      <span class="n">${esc(it.j.name)} ${it.kind === "failed" ? "failed" : "will pass its limit"}</span><span class="m">${esc(it.t.name)} · ${esc(what)}</span><span class="acts">${x(it)}</span></div>`;
+  });
   $("#sec-needs").hidden = !needs.length;
+  $("#p-needs-clear").hidden = needs.length < 2;
   setHTML($("#p-needs"), needs.slice(0, NEEDS_MAX).join("") + (needs.length > NEEDS_MAX ? `<div class="p-more">+${needs.length - NEEDS_MAX} more</div>` : ""));
 
   // Running: a timeline — agents working now, then jobs by finish time.
@@ -187,6 +195,9 @@ draggable($(".p-head"), () => {
 });
 
 document.addEventListener("click", (e) => {
+  const dis = e.target.closest("[data-dismiss]");
+  if (dis) { e.stopPropagation(); dismissNeeds([dis.dataset.dismiss]); return renderNow(); }
+  if (e.target.closest("#p-needs-clear")) { dismissNeeds(needsYou(snap).map((i) => i.key)); return renderNow(); }
   const resume = e.target.closest("[data-resume]")?.dataset.resume;
   if (resume) {
     e.stopPropagation();
@@ -210,6 +221,7 @@ $("#p-refresh").addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => e.key === "Escape" && win.hide());
 
+onDismissChange(() => renderNow());
 listen("snapshot", (e) => { snap = e.payload; error = null; render(); });
 listen("config-error", (e) => { error = e.payload; render(); });
 listen("panel-shown", () => renderNow());
