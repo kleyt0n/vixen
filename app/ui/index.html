@@ -15,8 +15,9 @@
     </div>
     <nav id="targets" aria-label="Navigation"></nav>
     <footer class="side-foot">
-      <button class="nav-item" id="btn-settings" title="Settings (⌘,)">
-        <span class="gear">⚙</span><span class="nav-name">Settings</span><span class="nav-badge" id="settings-dirty"></span>
+      <button class="nav-item top" id="btn-settings" title="Settings (⌘,)">
+        <span class="nav-ic" id="settings-ic"></span><span class="nav-name">Settings</span>
+        <span class="nav-pills"><span id="settings-dirty"></span><kbd>⌘,</kbd></span>
       </button>
     </footer>
   </aside>
@@ -140,6 +141,19 @@
           <section class="card" id="home-compute"></section>
           <section class="card" id="home-agents"></section>
         </div>
+        <div class="home-grid trends">
+          <section class="card">
+            <div class="card-head"><h2>GPU utilisation</h2>
+              <div class="segmented" id="util-range"><button data-r="6" class="on">6 h</button><button data-r="24">24 h</button></div></div>
+            <div id="util-legend"></div>
+            <div class="chart-box" id="util-chart"></div>
+          </section>
+          <section class="card">
+            <div class="card-head"><h2>Agent tokens</h2><span class="muted small">last 24 h, by hour</span></div>
+            <div id="tok-legend"></div>
+            <div class="chart-box" id="tok-chart"></div>
+          </section>
+        </div>
       </div>
     </div>
   </main>
@@ -229,6 +243,7 @@
 
   <script src="common.js"></script>
   <script src="foxes.js"></script>
+  <script src="charts.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

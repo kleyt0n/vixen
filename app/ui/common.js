@@ -75,6 +75,34 @@ function vendorIcon(name, size = "") {
   return `<span class="vendor v-${v.id} ${size}" title="${v.label}">${VENDOR_MARK[v.id]}</span>`;
 }
 
+// ---- icons --------------------------------------------------------------------
+// Line icons on a 24×24 grid, drawn in currentColor (1.8 px strokes, round caps).
+
+const ICON_PATHS = {
+  home: "M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1Z",
+  compute: "M7 7h10v10H7zM10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3M10 10h4v4h-4z",
+  cluster: "M4 5h16v4H4zM4 10h16v4H4zM4 15h16v4H4zM7 7h.01M7 12h.01M7 17h.01",
+  server: "M5 4h14v7H5zM5 13h14v7H5zM8.5 7.5h.01M8.5 16.5h.01M12 7.5h4M12 16.5h4",
+  cloud: "M7.5 18.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17.4 9a3.75 3.75 0 0 1-.4 9.5Z",
+  laptop: "M5 6h14v9H5zM3 18.5h18",
+  agents: "M12 3.5 13.6 8.4 18.5 10 13.6 11.6 12 16.5 10.4 11.6 5.5 10 10.4 8.4ZM18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7Z",
+  gear: "M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6ZM19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.1-1.2L14.2 3h-4.4l-.4 2.6a7 7 0 0 0-2.1 1.2l-2.3-.9-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.1 1.2l.4 2.6h4.4l.4-2.6a7 7 0 0 0 2.1-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z",
+  chevron: "m9 6 6 6-6 6",
+};
+
+function icon(name, cls = "") {
+  return `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON_PATHS[name] ?? ""}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/// Which icon fits a target, from its description ("slurm · gpu · ssh dgx", "modal", "gpu · local", …).
+function targetIcon(t) {
+  const k = t.kind ?? "";
+  if (/modal|vast|sky/.test(k)) return "cloud";
+  if (/local/.test(k)) return "laptop";
+  if (/slurm|sge/.test(k)) return "cluster";
+  return "server";
+}
+
 // ---- code agents --------------------------------------------------------------
 
 // Brand marks from Simple Icons (CC0, simple-icons@15.6.0); trademarks of their owners.

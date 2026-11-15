@@ -290,4 +290,7 @@ pub struct ToolUsage {
     pub tokens_5h: u64,
     pub tokens_today: u64,
     pub sessions_today: usize,
+    /// Tokens per hour over the last 24 hours, oldest first; the last entry is the current hour.
+    #[serde(default)]
+    pub tokens_by_hour: Vec<u64>,
 }

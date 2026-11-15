@@ -90,6 +90,27 @@ impl TokenLog {
         last.saturating_sub(before)
     }
 
+    /// Tokens per hour for the 24 hours ending with the hour containing `now`, oldest first.
+    pub fn by_hour(&self, now: i64) -> [u64; 24] {
+        let mut out = [0u64; 24];
+        let current = now - now.rem_euclid(3600);
+        let mut put = |at: i64, n: u64| {
+            let back = (current - (at - at.rem_euclid(3600))) / 3600;
+            if (0..24).contains(&back) {
+                out[23 - back as usize] += n;
+            }
+        };
+        for &(at, n) in self.messages.values() {
+            put(at, n);
+        }
+        let mut prev = 0;
+        for &(at, total) in &self.totals {
+            put(at, total.saturating_sub(prev));
+            prev = total;
+        }
+        out
+    }
+
     pub fn active_since(&self, since: i64) -> bool {
         self.messages.values().any(|(t, _)| *t >= since) || self.totals.iter().any(|(t, _)| *t >= since)
     }
@@ -284,6 +305,8 @@ mod tests {
             log.claude_line(&l);
         }
         assert_eq!(log.since(0), 130 + 111);
+        let hours = log.by_hour(super::super::ts("2026-11-14T12:10:00Z").unwrap());
+        assert_eq!((hours[23], hours[21]), (111, 130));
         assert_eq!(log.since(super::super::ts("2026-11-14T11:00:00Z").unwrap()), 111);
     }
 
@@ -299,6 +322,9 @@ mod tests {
         }
         assert_eq!(log.since(super::super::ts("2026-11-14T09:00:00Z").unwrap()), 8000);
         assert_eq!(log.since(0), 9000);
+        // 08:00 → 1000, 10:00 → +3000, 12:00 → +5000; "now" is 12:30.
+        let hours = log.by_hour(super::super::ts("2026-11-14T12:30:00Z").unwrap());
+        assert_eq!((hours[23], hours[21], hours[19], hours.iter().sum::<u64>()), (5000, 3000, 1000, 9000));
     }
 
     #[test]

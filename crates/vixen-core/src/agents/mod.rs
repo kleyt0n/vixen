@@ -160,10 +160,14 @@ impl Scanner {
             };
             let logs = self.tokens.values().filter(|(t, _)| *t == tool).map(|(_, l)| l);
             let (mut five, mut today, mut sessions) = (0, 0, 0);
+            let mut hours = [0u64; 24];
             for log in logs {
                 five += log.since(now - 5 * 3600);
                 today += log.since(midnight);
                 sessions += usize::from(log.active_since(midnight));
+                for (h, n) in hours.iter_mut().zip(log.by_hour(now)) {
+                    *h += n;
+                }
             }
             if current.is_empty() && today == 0 && five == 0 {
                 continue;
@@ -176,6 +180,7 @@ impl Scanner {
                 tokens_5h: five,
                 tokens_today: today,
                 sessions_today: sessions,
+                tokens_by_hour: hours.to_vec(),
             });
         }
         out
