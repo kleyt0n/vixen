@@ -4,7 +4,7 @@ TRIPLE   := $(ARCH)-apple-darwin
 APP      := target/release/bundle/macos/Vixen.app
 DMG      := dist/Vixen.dmg
 
-.PHONY: help build test lint fmt cli app dmg install install-cli install-app run watch clean icons tray-icon dist
+.PHONY: help build test lint fmt cli app dmg install install-cli install-app run watch clean icons tray-icon dist screenshots
 
 help:            ## Show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -36,6 +36,9 @@ icons:           ## Regenerate app icons from app/assets/*.svg
 tray-icon:       ## Render the menu-bar template icon (needs rsvg-convert)
 	rsvg-convert -h 36 app/assets/fox.svg -o app/src-tauri/icons/tray.png
 	rsvg-convert -h 36 app/assets/fox-alert.svg -o app/src-tauri/icons/tray-alert.png
+
+screenshots:     ## Render README screenshots (demo data, headless Chrome)
+	scripts/screenshots.sh
 
 dist: cli app   ## Package release archives for this Mac into dist/ (as CI does)
 	@mkdir -p dist
