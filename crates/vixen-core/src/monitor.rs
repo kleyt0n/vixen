@@ -1,9 +1,10 @@
 //! Concurrent poll loop: one task per target, each on its own interval,
 //! publishing a merged [`Snapshot`] through a `watch` channel.
 
+use crate::agents::Scanner;
 use crate::config::{Config, Target};
 use crate::exec::Exec;
-use crate::model::{JobState, Snapshot, TargetStatus};
+use crate::model::{Agent, JobState, Snapshot, TargetStatus, ToolUsage};
 use crate::progress::EtaTracker;
 use crate::sources;
 use std::collections::HashSet;
@@ -11,6 +12,30 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{Notify, watch};
+
+/// Latest state of every target and agent, merged into each published snapshot.
+struct Shared {
+    targets: Vec<TargetStatus>,
+    agents: Vec<Agent>,
+    usage: Vec<ToolUsage>,
+}
+
+impl Shared {
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            taken_at: now(),
+            targets: self.targets.clone(),
+            agents: self.agents.clone(),
+            usage: self.usage.clone(),
+        }
+    }
+
+    /// Avoid republishing (and re-rendering) every few seconds when nothing changed.
+    fn agents_changed(&self, new: &[Agent]) -> bool {
+        let key = |a: &Agent| (a.tool, a.id.clone(), a.state, a.updated_at, a.title.clone());
+        self.agents.len() != new.len() || self.agents.iter().zip(new).any(|(a, b)| key(a) != key(b))
+    }
+}
 
 /// Handle to one target's poll task.
 struct Waker {
@@ -37,13 +62,15 @@ impl Monitor {
     pub fn start(cfg: Config) -> Self {
         let cfg = Arc::new(cfg);
         let targets: Vec<Target> = cfg.targets.iter().filter(|t| t.enabled).cloned().collect();
-        let state = Arc::new(Mutex::new(
-            targets
+        let state = Arc::new(Mutex::new(Shared {
+            targets: targets
                 .iter()
                 .map(|t| TargetStatus { name: t.name.clone(), kind: t.describe(), ..Default::default() })
-                .collect::<Vec<_>>(),
-        ));
-        let (tx, rx) = watch::channel(Snapshot { taken_at: now(), targets: state.lock().unwrap().clone() });
+                .collect(),
+            agents: Vec::new(),
+            usage: Vec::new(),
+        }));
+        let (tx, rx) = watch::channel(state.lock().unwrap().snapshot());
         let tx = Arc::new(tx);
 
         let mut wake = Vec::new();
@@ -62,13 +89,34 @@ impl Monitor {
                     busy.store(false, Ordering::Relaxed);
                     {
                         let mut s = state.lock().unwrap();
-                        s[i] = status;
-                        tx.send_replace(Snapshot { taken_at: now(), targets: s.clone() });
+                        s.targets[i] = status;
+                        tx.send_replace(s.snapshot());
                     }
                     tokio::select! {
                         _ = tokio::time::sleep(every) => {}
                         _ = notify.notified() => {}
                     }
+                }
+            }));
+        }
+
+        // Agents: local files, cheap to rescan, so on their own short interval.
+        if cfg.agents.enabled {
+            let (cfg, state, tx) = (cfg.clone(), state.clone(), tx.clone());
+            tasks.push(tokio::spawn(async move {
+                let mut scanner = Scanner::default();
+                let every = Duration::from_secs(cfg.agents.interval.max(1));
+                loop {
+                    let scan = scanner.scan(&cfg.agents).await;
+                    {
+                        let mut s = state.lock().unwrap();
+                        if s.agents_changed(&scan.agents) || s.usage != scan.usage {
+                            s.agents = scan.agents;
+                            s.usage = scan.usage;
+                            tx.send_replace(s.snapshot());
+                        }
+                    }
+                    tokio::time::sleep(every).await;
                 }
             }));
         }
@@ -116,11 +164,12 @@ impl Monitor {
                 tokio::spawn(async move { poller.poll().await })
             })
             .collect();
+        let scan = Scanner::default().scan(&cfg.agents).await;
         let mut targets = Vec::with_capacity(handles.len());
         for h in handles {
             targets.push(h.await.unwrap_or_default());
         }
-        Snapshot { taken_at: now(), targets }
+        Snapshot { taken_at: now(), targets, agents: scan.agents, usage: scan.usage }
     }
 }
 

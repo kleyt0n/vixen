@@ -56,6 +56,14 @@ enum Cmd {
     Hold { target: String, job: String },
     /// Release a held job.
     Release { target: String, job: String },
+    /// Code-agent sessions on this machine (Claude Code, Codex, Antigravity).
+    Agents {
+        /// Include idle sessions from the whole window.
+        #[arg(short, long)]
+        all: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// List configured targets.
     Targets,
     /// Create ~/.config/vixen/config.toml from the example.
@@ -132,6 +140,15 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Hold { target, job } => println!("{}", control::act(cfg.target(&target)?, &job, Action::Hold).await?),
         Cmd::Release { target, job } => {
             println!("{}", control::act(cfg.target(&target)?, &job, Action::Release).await?)
+        }
+        Cmd::Agents { all, json } => {
+            let scan = vixen_core::agents::Scanner::default().scan(&cfg.agents).await;
+            if json {
+                println!("{}", serde_json::json!({ "agents": scan.agents, "usage": scan.usage }));
+            } else {
+                print!("{}", render::usage(&scan.usage, color));
+                print!("{}", render::agents(&scan.agents, color, if all { None } else { Some(12) }));
+            }
         }
         Cmd::Targets => {
             for t in &cfg.targets {

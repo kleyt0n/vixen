@@ -159,3 +159,78 @@ mod tests {
         assert_eq!(cloud_stop(Kind::Skypilot, "dev-a100").unwrap().0, ["stop", "-y", "dev-a100"]);
     }
 }
+
+/// How a job that left the queue ended, from the scheduler's accounting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outcome {
+    pub ok: bool,
+    /// e.g. `COMPLETED · exit 0:0`, `FAILED · exit 1:0`, `TIMEOUT`.
+    pub detail: String,
+}
+
+/// Look up the final state of `id` (Slurm `sacct`, SGE `qacct`). None when unknown.
+pub async fn outcome(t: &Target, id: &str) -> Option<Outcome> {
+    check_id(id).ok()?;
+    let job = id.split('%').next().unwrap_or(id);
+    let script = match t.scheduler {
+        Scheduler::Slurm => format!("sacct -j {} -X -n -P -o State,ExitCode 2>/dev/null | head -1", shq(job)),
+        Scheduler::Sge => format!("qacct -j {} 2>/dev/null | grep -E '^(failed|exit_status) '", sge_id(job)),
+        Scheduler::None => return None,
+    };
+    let out = Exec::new(t.host.clone(), t.ssh_args.clone()).sh(&script, TIMEOUT).await.ok()?;
+    match t.scheduler {
+        Scheduler::Slurm => parse_sacct(&out),
+        Scheduler::Sge => parse_qacct(&out),
+        Scheduler::None => None,
+    }
+}
+
+fn parse_sacct(out: &str) -> Option<Outcome> {
+    let (state, code) = out.lines().next()?.split_once('|')?;
+    let state = state.split_whitespace().next()?; // "CANCELLED by 123" → CANCELLED
+    if matches!(state, "PENDING" | "RUNNING" | "REQUEUED" | "SUSPENDED") {
+        return None;
+    }
+    let code = code.trim();
+    let ok = state == "COMPLETED" && code.split(':').next() == Some("0");
+    let detail = if code.is_empty() || code == "0:0" { state.to_string() } else { format!("{state} · exit {code}") };
+    Some(Outcome { ok, detail })
+}
+
+fn parse_qacct(out: &str) -> Option<Outcome> {
+    let field = |k: &str| out.lines().find_map(|l| l.strip_prefix(k)).map(|v| v.trim().to_string());
+    let status = field("exit_status")?;
+    let failed = field("failed").unwrap_or_else(|| "0".into());
+    let ok = status == "0" && failed.starts_with('0');
+    let detail = if ok {
+        "exit 0".to_string()
+    } else if !failed.starts_with('0') {
+        format!("failed: {failed}")
+    } else {
+        format!("exit {status}")
+    };
+    Some(Outcome { ok, detail })
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    use super::*;
+
+    #[test]
+    fn sacct_states() {
+        assert_eq!(parse_sacct("COMPLETED|0:0\n"), Some(Outcome { ok: true, detail: "COMPLETED".into() }));
+        assert_eq!(parse_sacct("FAILED|1:0"), Some(Outcome { ok: false, detail: "FAILED · exit 1:0".into() }));
+        assert_eq!(parse_sacct("CANCELLED by 1234|0:15").map(|o| o.ok), Some(false));
+        assert_eq!(parse_sacct("TIMEOUT|0:0"), Some(Outcome { ok: false, detail: "TIMEOUT".into() }));
+        assert_eq!(parse_sacct("RUNNING|0:0"), None);
+        assert_eq!(parse_sacct(""), None);
+    }
+
+    #[test]
+    fn qacct_states() {
+        assert_eq!(parse_qacct("failed       0\nexit_status  0\n").map(|o| o.ok), Some(true));
+        let o = parse_qacct("failed       0\nexit_status  137\n").unwrap();
+        assert_eq!((o.ok, o.detail.as_str()), (false, "exit 137"));
+        assert_eq!(parse_qacct("failed       100 : assumedly after job\nexit_status  0\n").map(|o| o.ok), Some(false));
+    }
+}
