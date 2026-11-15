@@ -6,9 +6,9 @@ const { listen } = window.__TAURI__.event;
 const win = appWindow;
 const { LogicalSize } = window.__TAURI__.dpi;
 
-const WIDTH = 680;
-const MAX_H = 640;
-const MIN_H = 340;
+const WIDTH = 600;
+const MAX_H = 600;
+const MIN_H = 300;
 const SIZE_KEY = "panel-size";
 
 // A size the user dragged to; while set, the panel stops auto-fitting its content.
@@ -23,7 +23,6 @@ const expanded = new Set(); // queue groups the user opened
 
 const isQueued = (j) => j.state === "pending" || j.state === "held";
 const isRunning = (j) => j.state === "running" || j.state === "completing";
-const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 // Only touch the DOM when markup changed, so scroll positions and hover survive polls.
 const last = new Map();
@@ -45,14 +44,18 @@ function renderNow() {
   const next = running.filter(({ j }) => j.eta).sort((a, b) => a.j.eta.finish_at - b.j.eta.finish_at)[0];
   const down = ts.filter((t) => !t.ok && t.error).length;
 
-  $("#p-sub").textContent = error ? "Config needs attention" : down ? `${down} unreachable` : plural(ts.length, "target");
-  const stat = (v, l) => `<div class="p-stat"><b>${v}</b><span>${l}</span></div>`;
+  const sub = $("#p-sub");
+  sub.textContent = error ? "config error" : down ? `${down} unreachable` : "";
+  sub.className = error || down ? "bad" : "";
+  const stat = (v, l) => `<span class="p-stat"><b>${v}</b><span>${l}</span></span>`;
+  const agents = (snap?.agents ?? []).filter((a) => a.state !== "idle");
+  const working = agents.filter((a) => a.state === "working").length;
   setHTML($("#p-stats"), [
-    stat(running.length, "Running"),
-    stat(queued.length, "Queued"),
-    stat(gpus.length ? `${busy}/${gpus.length}` : "–", "GPUs busy"),
-    stat(avg != null ? `${avg.toFixed(0)}%` : "–", "Avg util"),
-    stat(next ? `<span data-eta="${next.j.eta.finish_at}"></span>` : "–", "Next done"),
+    agents.length ? stat(working, `agent${working === 1 ? "" : "s"}${agents.length > working ? ` · ${agents.length - working} waiting` : ""}`) : "",
+    stat(running.length, "running"),
+    stat(queued.length, "queued"),
+    gpus.length ? stat(`${busy}/${gpus.length}`, `GPUs${avg != null ? ` · ${avg.toFixed(0)}%` : ""}`) : "",
+    next ? stat(`<span data-eta="${next.j.eta.finish_at}"></span>`, "next") : "",
   ].join(""));
   setHTML($("#p-banner"), error ? `<div class="banner"><span class="msg">${esc(error)}</span></div>` : "");
 
@@ -62,6 +65,12 @@ function renderNow() {
   setHTML($("#p-jobs"), running.length
     ? running.map(({ t, j }) => jobCard(t, j)).join("")
     : `<div class="p-empty">${ts.length ? "No running jobs." : "Waiting for the first poll…"}</div>`);
+
+  $("#n-agents").textContent = agents.length || "";
+  const usage = snap?.usage ?? [];
+  $("#p-agents-sec").hidden = !agents.length && !usage.length;
+  setHTML($("#p-usage"), usage.map((u) => `<div class="pu">${toolChip(u.tool, "sm")}<div class="pu-bars">${u.limits.map((l) => limitBar(l, true)).join("")}</div><span>${fmtTokens(u.tokens_today)}<br><small>today</small></span></div>`).join(""));
+  setHTML($("#p-agents"), agents.slice(0, 8).map(agentRow).join(""));
 
   $("#n-queued").textContent = queued.length || "";
   setHTML($("#p-queue"), ts.filter((t) => t.jobs.some(isQueued)).map(queueGroup).join("") || `<div class="p-empty">Nothing queued.</div>`);
@@ -89,6 +98,14 @@ function jobCard(t, j) {
     ${p ? `<div class="pj-bar"><div class="track"><div class="fill ${warn ? "red" : "green"}" style="width:${(p.fraction * 100).toFixed(2)}%"></div></div><span class="pct">${pct(p.fraction)}</span></div>` : ""}
     <div class="pj-meta"><span>${esc(p ? label : `${t}${j.last_line ? ` · ${j.last_line}` : ""}`)}</span>${right}</div>
   </div>`;
+}
+
+function agentRow(a) {
+  const place = [a.project, a.branch].filter(Boolean).join(" · ");
+  return `<div class="pa" data-agent="${esc(`${a.tool}::${a.id}`)}" title="${esc(a.title)}">
+    ${toolChip(a.tool, "sm")}
+    <span class="name">${esc(a.title)}</span><span class="st ${a.state}">${a.state}</span>
+    <span class="meta">${esc(place)}${place ? " · " : ""}<span data-since="${a.updated_at}"></span></span></div>`;
 }
 
 function queueGroup(t) {
@@ -141,6 +158,7 @@ function tick() {
   if (document.hidden) return;
   const n = now();
   document.querySelectorAll("[data-eta]").forEach((el) => (el.textContent = human(Number(el.dataset.eta) - n)));
+  document.querySelectorAll("[data-since]").forEach((el) => (el.textContent = `${human(n - Number(el.dataset.since))} ago`));
   document.querySelectorAll("[data-ago]").forEach((el) => {
     const t = Number(el.dataset.ago);
     el.textContent = t ? `updated ${human(n - t)} ago` : "";
@@ -195,6 +213,8 @@ document.addEventListener("click", (e) => {
     expanded.has(g) ? expanded.delete(g) : expanded.add(g);
     return render();
   }
+  const ag = e.target.closest("[data-agent]")?.dataset.agent;
+  if (ag) return invoke("panel_action", { action: "open", target: `agent:${ag}` });
   const t = e.target.closest("[data-target]")?.dataset.target;
   if (t) invoke("panel_action", { action: "open", target: t });
 });

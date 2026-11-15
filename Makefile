@@ -35,6 +35,7 @@ icons:           ## Regenerate app icons from app/assets/*.svg
 
 tray-icon:       ## Render the menu-bar template icon (needs rsvg-convert)
 	rsvg-convert -h 36 app/assets/fox.svg -o app/src-tauri/icons/tray.png
+	rsvg-convert -h 36 app/assets/fox-alert.svg -o app/src-tauri/icons/tray-alert.png
 
 dist: cli app   ## Package release archives for this Mac into dist/ (as CI does)
 	@mkdir -p dist
