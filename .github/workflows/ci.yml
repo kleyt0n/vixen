@@ -4,23 +4,70 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A new push to a PR cancels its older run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0 # smaller, faster cache; incremental doesn't help fresh CI builds
+  CARGO_NET_RETRY: 10
 
 jobs:
-  check:
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-24.04, windows-2022]
+  # Seconds, no compilation: fails fast on formatting and UI syntax.
+  fmt:
+    name: fmt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt
       - run: cargo fmt --all --check
-      - run: cargo clippy --locked -p vixen-core -p vixen-cli -- -D warnings
-      - run: cargo test --locked -p vixen-core -p vixen-cli
-        if: runner.os != 'Windows' # tests exercise /bin/sh
-      - run: cargo clippy --locked -p vixen-app -- -D warnings
-        if: runner.os == 'macOS'
+      - name: ui syntax
+        run: for f in app/ui/*.js; do node --check "$f"; done
+
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: core + CLI (the Tauri app needs macOS).
+          - name: linux
+            os: ubuntu-24.04
+            clippy: -p vixen-core -p vixen-cli
+            test: true
+          # macOS: the whole workspace, including the menu-bar app.
+          - name: macos
+            os: macos-latest
+            clippy: --workspace
+            test: true
+          # Windows: compile + lint only; release ships a Windows CLI, tests need /bin/sh.
+          - name: windows
+            os: windows-2022
+            clippy: -p vixen-core -p vixen-cli
+            test: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # PRs restore main's cache but never write their own, so it stays small and warm.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: clippy
+        run: cargo clippy --locked --all-targets ${{ matrix.clippy }} -- -D warnings
+      - name: test
+        if: matrix.test
+        run: cargo test --locked -p vixen-core -p vixen-cli
