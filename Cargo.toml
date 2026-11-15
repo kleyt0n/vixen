@@ -4,7 +4,7 @@ members = ["crates/vixen-core", "crates/vixen-cli", "app/src-tauri"]
 default-members = ["crates/vixen-core", "crates/vixen-cli", "app/src-tauri"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88" # let-chains (sources/sge.rs)
