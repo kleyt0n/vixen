@@ -22,7 +22,7 @@ pub struct Prefs {
     pub tray_title: TrayTitle,
     /// Always-on-top fox that opens the panel.
     pub float_button: bool,
-    /// Which fox the floating button shows: `kit`, `snow`, `sleepy` or `mini`.
+    /// Which buddy the floating button shows: `kit`, `snow`, `sleepy`, `mini`, `arara`, `squirrel` or `onca`.
     pub float_style: String,
     /// Last position of the floating button (physical pixels).
     pub float_pos: Option<(i32, i32)>,
