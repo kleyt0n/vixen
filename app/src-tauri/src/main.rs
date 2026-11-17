@@ -7,6 +7,7 @@
 
 mod prefs;
 mod tray;
+mod update;
 mod watch;
 
 use prefs::Prefs;
@@ -31,6 +32,8 @@ pub struct AppState {
     tray_alert: Mutex<bool>,
     /// Set while the floating fox's window is enlarged for a message.
     float_expanded: Mutex<Option<Expanded>>,
+    /// Latest release check and install progress.
+    update: Mutex<update::Status>,
 }
 
 /// How the fox window grew: which way, and by how much (physical pixels).
@@ -150,7 +153,8 @@ fn panel_action(app: AppHandle, action: String, target: Option<String>) {
                 let _ = app.emit_to("main", "focus-target", t);
             }
         }
-        "settings" => show_settings(&app),
+        // `target` names a Settings pane to open, e.g. `about` from the update notice.
+        "settings" => show_settings(&app, target),
         "quit" => app.exit(0),
         _ => {}
     }
@@ -211,8 +215,8 @@ fn get_prefs(state: State<AppState>) -> Prefs {
 fn set_prefs(app: AppHandle, state: State<AppState>, prefs: Prefs) {
     let prefs = {
         let mut cur = state.prefs.lock().unwrap();
-        // The button's position is owned by the app, not the settings form.
-        *cur = Prefs { float_pos: cur.float_pos, ..prefs };
+        // The button's position and the last announced release are owned by the app, not the form.
+        *cur = Prefs { float_pos: cur.float_pos, update_notified: cur.update_notified.clone(), ..prefs };
         cur.clone()
     };
     prefs::save(&app, &prefs);
@@ -366,9 +370,9 @@ pub fn start(app: &AppHandle) {
     }
 }
 
-pub fn show_settings(app: &AppHandle) {
+pub fn show_settings(app: &AppHandle, pane: Option<String>) {
     show_main(app);
-    let _ = app.emit("open-settings", ());
+    let _ = app.emit("open-settings", pane);
 }
 
 pub fn show_main(app: &AppHandle) {
@@ -421,13 +425,17 @@ fn main() {
             float_expand,
             summarize,
             ollama_models,
-            reload
+            reload,
+            update::update_status,
+            update::check_update,
+            update::install_update
         ])
         .setup(|app| {
             *app.state::<AppState>().prefs.lock().unwrap() = prefs::load(app.handle());
             tray::build(app.handle())?;
             apply_float(app.handle());
             start(app.handle());
+            update::init(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| match event {

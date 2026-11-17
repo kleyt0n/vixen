@@ -154,6 +154,12 @@
               <div class="muted">GPU, job and coding-agent monitoring.</div></div>
             </div>
             <div class="group-box">
+              <div class="row"><div><div class="row-title">Updates</div><div class="row-help" id="upd-help">Not checked yet</div></div>
+                <div class="ctl upd-ctl"><button class="ghost" id="upd-notes" hidden>Release notes</button><button id="upd-check">Check now</button><button class="primary" id="upd-install" hidden>Update</button></div></div>
+              <div class="row"><div><div class="row-title">Check automatically</div><div class="row-help">Look for a new release every few hours. A banner and a notification say when one is out.</div></div>
+                <div class="ctl"><label class="switch"><input type="checkbox" id="pref-updates"><span></span></label></div></div>
+            </div>
+            <div class="group-box">
               <div class="row"><div><div class="row-title">Configuration</div><div class="row-help mono" id="about-path"></div></div>
                 <div class="ctl"><button id="about-open">Open file</button></div></div>
               <div class="row"><div><div class="row-title">Source and releases</div><div class="row-help">github.com/kleyt0n/vixen</div></div>
@@ -283,6 +289,7 @@
   </div>
 
   <datalist id="ssh-hosts"></datalist>
+  <div id="update-banner" class="update-banner" role="status" hidden></div>
   <div id="toast" class="toast" hidden></div>
 
   <script src="common.js"></script>

@@ -81,6 +81,8 @@ The installer verifies downloads against the release checksums. It installs:
 - on macOS, **Vixen.app**;
 - a starter configuration.
 
+The app checks for new releases every few hours and shows a banner when one is out. **Settings → About → Update** installs it in place, along with the CLI in `~/.local/bin`, and restarts Vixen. Turn off the checks there too. Elsewhere, re-run the installer to update.
+
 To build from source, run `make install` (requires Rust; the app also needs `cargo install tauri-cli --version "^2" --locked`).
 
 ## Quick start
