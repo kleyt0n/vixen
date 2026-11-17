@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-4a5d7e" alt="Platforms">
 </p>
 
-Vixen keeps your compute and your coding agents in one place. It watches GPUs and jobs on SSH hosts, Slurm and SGE clusters, cloud GPU providers and your own machine. It also tracks Claude Code, Codex and Antigravity sessions with their plan limits and token use. It ships as a native macOS menu-bar app and a cross-platform command-line tool, built on a single Rust core.
+Vixen keeps your compute and your coding agents in one place. It watches GPUs and jobs on SSH hosts, Slurm and SGE clusters, cloud GPU providers and your own machine. It also tracks Claude Code, Codex, Antigravity and OpenCode sessions with their plan limits and token use. It ships as a native macOS menu-bar app and a cross-platform command-line tool, built on a single Rust core.
 
 ```bash
 # install macOS/Linux
@@ -44,7 +44,7 @@ irm https://raw.githubusercontent.com/kleyt0n/vixen/main/scripts/install.ps1 \| 
 
 ### Coding agents
 
-- **Session state**: each Claude Code, Codex and Antigravity session is shown as working, waiting for input or idle, with project, branch, model and context usage.
+- **Session state**: each Claude Code, Codex, Antigravity and OpenCode session is shown as working, waiting for input or idle, with project, branch, model and context usage.
 - **Plan limits and tokens**: session and weekly limits per tool, plus token usage today and by hour.
 - **Quick actions**: resume a session in Terminal, open its working directory or reveal its transcript.
 
@@ -117,6 +117,7 @@ Every option is documented in [`config/example.toml`](config/example.toml).
 | Claude Code | session files in `~/.claude` |
 | Codex | session files in `~/.codex` |
 | Antigravity | conversation index in `~/.gemini/antigravity` (read-only) |
+| OpenCode | session database in `~/.local/share/opencode` (read-only) |
 
 ## Command line
 

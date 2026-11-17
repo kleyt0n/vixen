@@ -56,7 +56,7 @@ enum Cmd {
     Hold { target: String, job: String },
     /// Release a held job.
     Release { target: String, job: String },
-    /// Code-agent sessions on this machine (Claude Code, Codex, Antigravity).
+    /// Code-agent sessions on this machine (Claude Code, Codex, Antigravity, OpenCode).
     Agents {
         /// Include idle sessions from the whole window.
         #[arg(short, long)]
