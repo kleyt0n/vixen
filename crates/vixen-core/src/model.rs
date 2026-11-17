@@ -31,6 +31,24 @@ pub struct TargetStatus {
     pub host: Option<HostStats>,
     pub gpus: Vec<Gpu>,
     pub jobs: Vec<Job>,
+    /// Where `gpus` come from, so an empty list can be explained.
+    #[serde(default)]
+    pub gpu_source: GpuSource,
+}
+
+/// How a target reads GPUs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GpuSource {
+    /// It doesn't (no `host_gpus` or `job_gpus`).
+    #[default]
+    None,
+    /// The machine itself (`host_gpus`).
+    Host,
+    /// Inside your running Slurm jobs (`job_gpus`).
+    Jobs,
+    /// The instances a cloud CLI lists (Vast.ai).
+    Instances,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

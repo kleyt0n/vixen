@@ -206,6 +206,7 @@ section + section { margin-top: 30px; }
 
 /* ---- GPU cards ---------------------------------------------------------- */
 .gpu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.gpu-grid > .empty { grid-column: 1 / -1; }
 .gpu {
   position: relative;
   padding: 16px 18px;

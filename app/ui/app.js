@@ -496,7 +496,35 @@ function renderGpus() {
     }
   }
   $("#gpu-count").textContent = cards.length || "";
-  setHTML($("#gpus"), cards.join("") || `<div class="empty">No GPU telemetry for this view. Set <span class="mono">host_gpus = true</span> or <span class="mono">job_gpus = true</span> on a target.</div>`);
+  setHTML($("#gpus"), cards.join("") || `<div class="empty">${noGpus(targets())}</div>`);
+}
+
+/// Why a view has no GPU cards: per target that reads GPUs, what it's waiting for, or how to turn
+/// GPU readings on when none does.
+function noGpus(ts) {
+  const reading = ts.filter((t) => t.gpu_source && t.gpu_source !== "none");
+  if (!reading.length) {
+    if (ts.length && ts.every((t) => /^sge\b/.test(t.kind))) {
+      return `Vixen can't read GPUs inside SGE jobs (<span class="mono">job_gpus</span> is Slurm only), so this target lists jobs only.`;
+    }
+    return `No GPU readings for this view. Turn on <span class="mono">host_gpus</span> (GPUs on the machine) or, on Slurm,
+      <span class="mono">job_gpus</span> (GPUs inside your running jobs) for a target in Settings → Machines.`;
+  }
+  const one = reading.length === 1 && ts.length === 1;
+  return reading.map((t) => {
+    const who = one ? "" : `<b>${esc(t.name)}</b>: `;
+    if (!t.updated_at) return `${who}${t.error ? "couldn't be reached yet." : "waiting for the first poll…"}`;
+    if (t.gpu_source === "jobs") {
+      const running = t.jobs.filter((j) => j.state === "running" || j.state === "completing").length;
+      const queued = t.jobs.filter((j) => j.state === "pending" || j.state === "held").length;
+      if (!running) {
+        return `${who}No running jobs to read GPUs from${queued ? ` (${queued} queued)` : ""}. GPUs show up here once a job starts.`;
+      }
+      return `${who}None of your ${running} running job${running === 1 ? "" : "s"} reported a GPU. They may not have requested one.`;
+    }
+    if (t.gpu_source === "instances") return `${who}No instances running.`;
+    return `${who}No GPUs found on this machine.`;
+  }).join("<br>");
 }
 
 function jobRow(t, j) {
