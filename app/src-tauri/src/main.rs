@@ -239,7 +239,9 @@ fn apply_float(app: &AppHandle) {
         let _ = w.hide();
         return;
     }
-    let pos = prefs.float_pos.map(|(x, y)| PhysicalPosition::new(x, y)).or_else(|| {
+    // A saved spot on a display that's since been unplugged would leave the fox off-screen.
+    let saved = prefs.float_pos.map(|(x, y)| PhysicalPosition::new(x, y)).filter(|p| on_screen(&w, *p));
+    let pos = saved.or_else(|| {
         let m = w.primary_monitor().ok()??;
         let size = w.outer_size().ok()?;
         let margin = (32.0 * m.scale_factor()) as i32;
@@ -252,6 +254,16 @@ fn apply_float(app: &AppHandle) {
         let _ = w.set_position(p);
     }
     let _ = w.show();
+}
+
+/// Whether the fox's centre at `p` (window origin) lies on a connected display.
+fn on_screen(w: &tauri::WebviewWindow, p: PhysicalPosition<i32>) -> bool {
+    let half = w.outer_size().map(|s| (s.width as i32 / 2, s.height as i32 / 2)).unwrap_or((36, 36));
+    let (cx, cy) = (p.x + half.0, p.y + half.1);
+    w.available_monitors().unwrap_or_default().iter().any(|m| {
+        let (mp, ms) = (m.position(), m.size());
+        cx >= mp.x && cx < mp.x + ms.width as i32 && cy >= mp.y && cy < mp.y + ms.height as i32
+    })
 }
 
 /// Grow the fox window to fit a message bubble (towards free screen space), or shrink it back
