@@ -53,6 +53,11 @@ const KIND = {
 };
 const ANIMS = Object.values(KIND).map((k) => k.anim);
 
+// The bubble sits this far from the fox's edge of the window (see .bubble in float.html),
+// plus room on the far side for its shadow.
+const BUBBLE_ABOVE_FOX = 46;
+const BUBBLE_MARGIN = 14;
+
 const queue = [];
 let showing = false;
 
@@ -60,14 +65,12 @@ async function showNext() {
   if (showing || !queue.length) return;
   showing = true;
   const m = queue.shift();
-  const layout = await invoke("float_expand", { on: true }).catch(() => ({ right: false, down: false }));
-  stage.classList.toggle("right", !!layout.right);
-  stage.classList.toggle("down", !!layout.down);
   bubble.className = `bubble ${m.kind}`;
   const kind = KIND[m.kind] ?? KIND.done;
   document.getElementById("b-ico").textContent = kind.icon;
   document.getElementById("b-title").textContent = m.title;
   document.getElementById("b-detail").textContent = m.detail ?? "";
+  bubble.title = [m.title, m.detail].filter(Boolean).join("\n");
   const meter = document.getElementById("b-meter");
   meter.hidden = m.percent == null;
   if (m.percent != null) {
@@ -75,6 +78,20 @@ async function showNext() {
     meter.firstElementChild.className = m.percent >= 90 ? "red" : "";
   }
   updateMore();
+  // Measure the bubble before growing the window, so the window fits it. Count the "+N more"
+  // line even if it's hidden: another message may arrive while this one shows.
+  const more = document.getElementById("b-more");
+  const moreHidden = more.hidden;
+  more.hidden = false;
+  bubble.style.visibility = "hidden";
+  bubble.hidden = false;
+  const height = bubble.offsetHeight + BUBBLE_ABOVE_FOX + BUBBLE_MARGIN;
+  bubble.hidden = true;
+  bubble.style.visibility = "";
+  more.hidden = moreHidden;
+  const layout = await invoke("float_expand", { on: true, height }).catch(() => ({ right: false, down: false }));
+  stage.classList.toggle("right", !!layout.right);
+  stage.classList.toggle("down", !!layout.down);
   bubble.hidden = false;
   fb.classList.remove(...ANIMS);
   void fb.offsetWidth; // restart the animation
