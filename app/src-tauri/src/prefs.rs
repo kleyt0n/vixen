@@ -30,6 +30,10 @@ pub struct Prefs {
     pub limit_alert: u8,
     /// Which events the fox announces.
     pub events: Events,
+    /// Look for a new release every few hours.
+    pub check_updates: bool,
+    /// The release last announced with a notification (each version is announced once).
+    pub update_notified: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +62,8 @@ impl Default for Prefs {
             float_pos: None,
             limit_alert: 80,
             events: Events::default(),
+            check_updates: true,
+            update_notified: None,
         }
     }
 }

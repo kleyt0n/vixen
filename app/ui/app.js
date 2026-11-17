@@ -841,6 +841,10 @@ setInterval(() => {
 // Edits a draft copy of the config; Save validates on both sides, writes the
 // TOML file and restarts polling.
 
+// Latest release check (see "updates" below); declared early since settings rendering reads it.
+let UPD = null;
+const UPD_DISMISSED = "vixen-update-dismissed";
+
 const CFG = {
   open: false,
   path: "",
@@ -909,13 +913,14 @@ function validate(cfg) {
 let PREFS = null;
 async function loadPrefs() {
   try { PREFS = await invoke("get_prefs"); }
-  catch { PREFS = { tray_title: "count_eta", float_button: false, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true, insights: true } }; }
+  catch { PREFS = { tray_title: "count_eta", float_button: false, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true, insights: true }, check_updates: true }; }
   renderPrefs();
 }
 function renderPrefs() {
   if (!PREFS) return;
   document.querySelectorAll("#pref-tray [data-tray]").forEach((b) => b.classList.toggle("on", b.dataset.tray === PREFS.tray_title));
   $("#pref-float").checked = !!PREFS.float_button;
+  $("#pref-updates").checked = PREFS.check_updates !== false;
   document.querySelectorAll("#pref-events [data-ev]").forEach((el) => (el.checked = !!PREFS.events?.[el.dataset.ev]));
   if (document.activeElement !== $("#pref-limit")) $("#pref-limit").value = PREFS.limit_alert ?? 80;
   const style = PREFS.float_style || "kit";
@@ -933,6 +938,10 @@ $("#pref-tray").addEventListener("click", (e) => {
   if (b) savePrefs({ tray_title: b.dataset.tray });
 });
 $("#pref-float").addEventListener("change", (e) => savePrefs({ float_button: e.target.checked }));
+$("#pref-updates").addEventListener("change", (e) => {
+  savePrefs({ check_updates: e.target.checked });
+  if (e.target.checked) checkUpdate();
+});
 $("#pref-events").addEventListener("change", (e) => {
   const k = e.target.dataset.ev;
   if (k) savePrefs({ events: { ...PREFS.events, [k]: e.target.checked } });
@@ -984,6 +993,7 @@ function renderSetNav() {
     ? `<div class="set-group">${esc(p.group)}</div>`
     : `<button class="set-item ${p.id === setPane ? "on" : ""}" data-pane="${p.id}">${icon(p.icon)}<span>${p.label}</span>${dirty.has(p.id) ? '<span class="set-dirty" title="Unsaved changes"></span>' : ""}</button>`).join(""));
   document.querySelectorAll(".set-pane").forEach((el) => (el.hidden = el.dataset.pane !== setPane));
+  renderUpdate();
 }
 
 function showPane(id) {
@@ -1021,6 +1031,7 @@ function closeSettings() {
   $("#view-settings").hidden = true;
   $(`#view-${S.page === "compute" ? "dash" : S.page}`).hidden = false;
   updateSettingsChrome();
+  renderUpdate();
   render();
 }
 
@@ -1384,6 +1395,79 @@ onDismissChange(() => render());
 
 $("#settings-ic").innerHTML = icon("gear");
 
+// ---- updates ----------------------------------------------------------------
+// The app checks GitHub every few hours (Settings → About); a new release shows a banner over
+// every page until it's installed or dismissed for that version.
+
+function renderUpdate() {
+  const u = UPD;
+  if (!u) return;
+  const v = u.latest;
+  const help = u.installing ? `Downloading and installing ${esc(v)}… Vixen restarts when it's done.`
+    : u.checking ? "Checking…"
+    : u.available ? `Version ${esc(v)} is available. You have ${esc(u.current)}.`
+    : u.error ? `Couldn't check: ${esc(u.error)}`
+    : u.checked_at ? `You're on the latest version · checked <span data-since="${u.checked_at}"></span>`
+    : "Not checked yet";
+  setHTML($("#upd-help"), help);
+  $("#upd-check").hidden = u.available;
+  $("#upd-check").disabled = u.checking || u.installing;
+  $("#upd-check").textContent = u.checking ? "Checking…" : "Check now";
+  $("#upd-notes").hidden = !u.available || !u.url;
+  const inst = $("#upd-install");
+  inst.hidden = !u.available;
+  inst.disabled = u.installing;
+  inst.textContent = u.installing ? "Updating…" : u.can_install ? `Update to ${v}` : `Download ${v}`;
+
+  let dismissed = null;
+  try { dismissed = localStorage.getItem(UPD_DISMISSED); } catch {}
+  const banner = $("#update-banner");
+  // Settings → About already says it all.
+  const onAbout = CFG.open && setPane === "about";
+  const show = u.available && !onAbout && (u.installing || dismissed !== v);
+  banner.hidden = !show;
+  if (!show) return;
+  setHTML(banner, `<span class="upd-ic">↑</span>
+    <span class="upd-t">Vixen ${esc(v)} is available</span>
+    <button class="ghost upd-x" data-upd="dismiss" title="Not now" ${u.installing ? "hidden" : ""}>✕</button>
+    <span class="upd-s">${u.installing ? "Installing… Vixen restarts when it's done." : `You have ${esc(u.current)}.`}</span>
+    <div class="upd-acts">
+      ${u.url ? `<button class="ghost" data-upd="notes">What's new</button>` : ""}
+      <button class="primary" data-upd="install" ${u.installing ? "disabled" : ""}>${u.installing ? "Updating…" : u.can_install ? "Update now" : "Download"}</button>
+    </div>`);
+}
+
+async function checkUpdate() {
+  try { UPD = await invoke("check_update"); } catch (e) { toast(String(e), true); }
+  renderUpdate();
+  if (UPD && !UPD.available && !UPD.error) toast(`Vixen ${UPD.current} is the latest version`);
+}
+
+async function installUpdate() {
+  if (!UPD?.available) return;
+  if (!UPD.can_install) return openReleasePage();
+  try { await invoke("install_update"); } catch (e) { toast(String(e), true); }
+}
+
+function openReleasePage() {
+  invoke("open_url", { url: UPD?.url || "https://github.com/kleyt0n/vixen/releases/latest" }).catch((e) => toast(String(e), true));
+}
+
+$("#upd-check").addEventListener("click", checkUpdate);
+$("#upd-install").addEventListener("click", installUpdate);
+$("#upd-notes").addEventListener("click", openReleasePage);
+$("#update-banner").addEventListener("click", (e) => {
+  const a = e.target.closest("[data-upd]")?.dataset.upd;
+  if (a === "install") installUpdate();
+  else if (a === "notes") openReleasePage();
+  else if (a === "dismiss") {
+    try { localStorage.setItem(UPD_DISMISSED, UPD.latest); } catch {}
+    renderUpdate();
+  }
+});
+listen("update", (e) => { UPD = e.payload; renderUpdate(); });
+invoke("update_status").then((u) => { UPD = u; renderUpdate(); }).catch(() => {});
+
 // ---- boot -------------------------------------------------------------------
 
 listen("snapshot", (e) => {
@@ -1392,7 +1476,10 @@ listen("snapshot", (e) => {
   sampleHistory();
   render();
 });
-listen("open-settings", () => openSettings());
+listen("open-settings", async (e) => {
+  await openSettings();
+  if (typeof e.payload === "string") showPane(e.payload);
+});
 listen("focus-target", (e) => {
   const p = String(e.payload);
   if (p.startsWith("agent:")) {

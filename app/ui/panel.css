@@ -37,6 +37,8 @@ body.panel-body { display: block; overflow: hidden; padding: 0; }
 .p-label b { font-weight: 500; font-size: 11px; color: var(--faint); }
 #p-banner:empty { display: none; }
 #p-banner .banner { margin: 10px 14px 0; font-size: 12px; }
+#p-update:empty { display: none; }
+#p-update .banner { margin: 10px 14px 0; font-size: 12px; align-items: center; background: var(--blue-soft); cursor: pointer; }
 
 /* needs you */
 .need { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 1px 9px; align-items: center; padding: 5px 0; cursor: pointer; }

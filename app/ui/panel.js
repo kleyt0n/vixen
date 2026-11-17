@@ -235,6 +235,15 @@ $("#p-refresh").addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => e.key === "Escape" && win.hide());
 
 onDismissChange(() => renderNow());
+// A new release: one line that opens Settings → About.
+function renderUpdate(u) {
+  setHTML($("#p-update"), u?.available
+    ? `<div class="banner" data-a="settings" data-target="about"><span class="msg">Vixen ${esc(u.latest)} is available</span><button class="link" data-a="settings" data-target="about">Update…</button></div>`
+    : "");
+}
+listen("update", (e) => renderUpdate(e.payload));
+invoke("update_status").then(renderUpdate).catch(() => {});
+
 listen("snapshot", (e) => { snap = e.payload; error = null; render(); });
 listen("config-error", (e) => { error = e.payload; render(); });
 listen("panel-shown", () => renderNow());
