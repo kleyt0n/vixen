@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Snapshot {
     pub taken_at: i64,
     pub targets: Vec<TargetStatus>,
-    /// Code-agent sessions (Claude Code, Codex, Antigravity…) active within the configured window.
+    /// Code-agent sessions (Claude Code, Codex, Antigravity, OpenCode…) active within the configured window.
     #[serde(default)]
     pub agents: Vec<Agent>,
     /// Per-tool plan limits and token totals.
@@ -222,16 +222,19 @@ pub enum Tool {
     ClaudeCode,
     Codex,
     Antigravity,
+    #[serde(rename = "opencode")]
+    OpenCode,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 3] = [Tool::ClaudeCode, Tool::Codex, Tool::Antigravity];
+    pub const ALL: [Tool; 4] = [Tool::ClaudeCode, Tool::Codex, Tool::Antigravity, Tool::OpenCode];
 
     pub fn label(self) -> &'static str {
         match self {
             Tool::ClaudeCode => "Claude Code",
             Tool::Codex => "Codex",
             Tool::Antigravity => "Antigravity",
+            Tool::OpenCode => "OpenCode",
         }
     }
 }

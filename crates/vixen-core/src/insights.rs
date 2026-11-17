@@ -31,7 +31,7 @@ const AGENT_RECENT_S: i64 = 2 * 3600;
 const GENERATE_TIMEOUT: Duration = Duration::from_secs(240);
 
 const SYSTEM: &str = "You are Vixen, a monitoring assistant for an engineer who runs GPU training jobs \
-and AI coding agents (Claude Code, Codex). You read a status digest and write short, clean, concrete insights.
+and AI coding agents (Claude Code, Codex, Antigravity, OpenCode). You read a status digest and write short, clean, concrete insights.
 
 Write:
 - headline: one sentence (max 20 words) with the most important thing right now.
@@ -88,6 +88,7 @@ fn tool_id(t: Tool) -> &'static str {
         Tool::ClaudeCode => "claude_code",
         Tool::Codex => "codex",
         Tool::Antigravity => "antigravity",
+        Tool::OpenCode => "opencode",
     }
 }
 

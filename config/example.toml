@@ -12,7 +12,7 @@
 interval = 300              # 5 minutes; ↻ / ⌘R polls immediately
 
 
-# Code agents on this Mac (Claude Code, Codex, Antigravity), read from their
+# Code agents on this Mac (Claude Code, Codex, Antigravity, OpenCode), read from their
 # local session files. Remove this table to use the defaults shown.
 [agents]
 enabled      = true
@@ -21,6 +21,7 @@ interval     = 5         # seconds between scans (only changed files are re-read
 claude_code  = true
 codex        = true
 antigravity  = true
+opencode     = true
 # Fetch Claude plan limits live using Claude Code's saved login (macOS asks once
 # for Keychain access). Off: limits update only when you run /usage in Claude Code.
 live_claude_limits = false

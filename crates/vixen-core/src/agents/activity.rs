@@ -16,7 +16,7 @@ pub fn recent(agent: &Agent, max: usize) -> Vec<String> {
     let mut lines = match agent.tool {
         Tool::ClaudeCode => claude(&tail),
         Tool::Codex => codex(&tail),
-        Tool::Antigravity => Vec::new(),
+        Tool::Antigravity | Tool::OpenCode => Vec::new(),
     };
     lines.dedup();
     let skip = lines.len().saturating_sub(max);

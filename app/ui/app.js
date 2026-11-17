@@ -241,7 +241,7 @@ function usageCard(u) {
   return `<div class="usage-card">
     <div class="uc-head">${toolChip(u.tool, "lg")}<div class="cell"><div class="l1 name">${esc(label)}</div>
       <div class="l2">${[u.plan && esc(u.plan), asOf].filter(Boolean).join(" · ")}</div></div></div>
-    <div class="limits">${u.limits.map((l) => limitBar(l)).join("") || `<div class="faint small">No plan limits recorded yet.</div>`}</div>
+    <div class="limits">${u.limits.map((l) => limitBar(l)).join("") || `<div class="faint small">${u.tool === "opencode" ? "OpenCode doesn't report plan limits." : "No plan limits recorded yet."}</div>`}</div>
     ${stale ? `<div class="uc-note">Some limits have reset since. ${esc(REFRESH_HINT[u.tool] ?? "")}.</div>` : ""}
     <div class="uc-tokens">
       <div><b>${fmtTokens(u.tokens_5h)}</b><span>tokens · last 5h</span></div>
@@ -265,7 +265,7 @@ function renderAgents() {
   if (!list.length) {
     const hint = all.length
       ? `No ${S.agentFilter === "active" ? "active " : ""}sessions match. ${S.agentFilter === "active" ? "Switch to All to see idle ones." : ""}`
-      : "No agent sessions in the window. Start Claude Code, Codex or Antigravity and they appear here.";
+      : "No agent sessions in the window. Start Claude Code, Codex, Antigravity or OpenCode and they appear here.";
     return setHTML($("#agents"), `<div class="empty pad">${hint}</div>`);
   }
   let html = "";
@@ -368,7 +368,7 @@ function renderHome() {
 
 // Colour follows the entity: a machine keeps its config position's slot; each tool has a fixed slot.
 const seriesColor = (i) => `var(--series-${(i % 8) + 1})`;
-const TOOL_SLOT = { codex: 0, claude_code: 1, antigravity: 2 };
+const TOOL_SLOT = { codex: 0, claude_code: 1, antigravity: 2, opencode: 3 };
 S.utilRange = 6;
 
 function renderTrends() {
@@ -888,7 +888,7 @@ const TARGET_DEFAULTS = {
   all_users: false, interval: null, command: null, ssh_args: [], enabled: true,
 };
 const clone = (x) => JSON.parse(JSON.stringify(x));
-const AGENT_DEFAULTS = { enabled: true, window_hours: 24, interval: 5, claude_code: true, codex: true, antigravity: true, live_claude_limits: false };
+const AGENT_DEFAULTS = { enabled: true, window_hours: 24, interval: 5, claude_code: true, codex: true, antigravity: true, opencode: true, live_claude_limits: false };
 const INSIGHT_DEFAULTS = { enabled: false, url: "http://localhost:11434", model: "", interval: 300, job_logs: true };
 const withDefaults = (cfg) => ({
   interval: cfg.interval ?? 300,

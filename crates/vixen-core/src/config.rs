@@ -37,6 +37,7 @@ pub struct Agents {
     pub claude_code: bool,
     pub codex: bool,
     pub antigravity: bool,
+    pub opencode: bool,
     /// Fetch Claude plan limits live with Claude Code's saved login (Keychain on macOS)
     /// instead of only reading what `/usage` last saved.
     pub live_claude_limits: bool,
@@ -51,6 +52,7 @@ impl Default for Agents {
             claude_code: true,
             codex: true,
             antigravity: true,
+            opencode: true,
             live_claude_limits: false,
         }
     }
@@ -64,6 +66,7 @@ impl Agents {
                 ClaudeCode => self.claude_code,
                 Codex => self.codex,
                 Antigravity => self.antigravity,
+                OpenCode => self.opencode,
             }
     }
 }

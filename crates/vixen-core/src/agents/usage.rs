@@ -49,7 +49,7 @@ impl TokenLog {
             match tool {
                 Tool::ClaudeCode => self.claude_line(line),
                 Tool::Codex => self.codex_line(line),
-                Tool::Antigravity => {}
+                Tool::Antigravity | Tool::OpenCode => {}
             }
         }
     }
@@ -81,6 +81,11 @@ impl TokenLog {
     }
 
     /// Tokens used at or after `since`.
+    /// One message's tokens, for tools that store usage per message (OpenCode).
+    pub fn record(&mut self, id: &str, at: i64, tokens: u64) {
+        self.messages.insert(id.to_string(), (at, tokens));
+    }
+
     pub fn since(&self, since: i64) -> u64 {
         if !self.messages.is_empty() {
             return self.messages.values().filter(|(t, _)| *t >= since).map(|(_, n)| n).sum();

@@ -1,4 +1,4 @@
-//! Code-agent sessions (Claude Code, Codex, Antigravity), read from each tool's own
+//! Code-agent sessions (Claude Code, Codex, Antigravity, OpenCode), read from each tool's own
 //! session files on this machine. Nothing is sent anywhere; files are only read.
 //!
 //! Each scan stats candidate files and re-parses only those whose size or mtime
@@ -8,6 +8,7 @@ pub mod activity;
 mod antigravity;
 mod claude;
 mod codex;
+mod opencode;
 mod usage;
 
 use crate::config::Agents;
@@ -43,6 +44,7 @@ pub struct Scanner {
     /// Live Claude limits (when enabled) and when to try fetching next.
     claude_live: Option<(Vec<crate::model::UsageLimit>, i64)>,
     next_live: i64,
+    opencode: opencode::OpenCode,
 }
 
 /// One scan: sessions plus per-tool limits and token totals.
@@ -87,7 +89,7 @@ impl Scanner {
                 let parsed = match tool {
                     Tool::ClaudeCode => claude::parse(&path),
                     Tool::Codex => codex::parse(&path),
-                    Tool::Antigravity => None,
+                    Tool::Antigravity | Tool::OpenCode => None,
                 };
                 *entry = (mtime, meta.len(), parsed);
             }
@@ -101,12 +103,17 @@ impl Scanner {
         self.cache.retain(|k, _| seen.contains(k));
         self.tokens.retain(|k, _| seen.contains(k));
 
+        let mut db_sessions = Vec::new();
         if cfg.watches(Tool::Antigravity) {
-            for p in antigravity::sessions(cutoff).await {
-                let mut a = p.agent;
-                a.state = state(p.in_progress, now - a.updated_at);
-                out.push(a);
-            }
+            db_sessions.extend(antigravity::sessions(cutoff).await);
+        }
+        if cfg.watches(Tool::OpenCode) {
+            db_sessions.extend(self.opencode.refresh(cutoff, (now - 24 * 3600).min(midnight(now))).await);
+        }
+        for p in db_sessions {
+            let mut a = p.agent;
+            a.state = state(p.in_progress, now - a.updated_at);
+            out.push(a);
         }
 
         let rank = |s: AgentState| match s {
@@ -120,11 +127,7 @@ impl Scanner {
     }
 
     async fn usage(&mut self, cfg: &Agents, now: i64) -> Vec<ToolUsage> {
-        let midnight = chrono::Local::now()
-            .date_naive()
-            .and_hms_opt(0, 0, 0)
-            .and_then(|d| d.and_local_timezone(chrono::Local).earliest())
-            .map_or(now - 86400, |d| d.timestamp());
+        let midnight = midnight(now);
         if cfg.watches(Tool::ClaudeCode) {
             self.claude_limits.refresh(&claude::state_file(), usage::claude_limits);
             if cfg.live_claude_limits && now >= self.next_live {
@@ -148,7 +151,11 @@ impl Scanner {
         }
 
         let mut out = Vec::new();
-        for (tool, limits) in [(Tool::ClaudeCode, &self.claude_limits), (Tool::Codex, &self.codex_limits)] {
+        // OpenCode reports no plan limits, only tokens.
+        let no_limits = LimitCache::default();
+        for (tool, limits) in
+            [(Tool::ClaudeCode, &self.claude_limits), (Tool::Codex, &self.codex_limits), (Tool::OpenCode, &no_limits)]
+        {
             if !cfg.watches(tool) {
                 continue;
             }
@@ -159,7 +166,9 @@ impl Scanner {
                 }
                 _ => (limits.limits.clone(), limits.as_of),
             };
-            let logs = self.tokens.values().filter(|(t, _)| *t == tool).map(|(_, l)| l);
+            let files = self.tokens.values().filter(|(t, _)| *t == tool).map(|(_, l)| l);
+            let db = self.opencode.tokens.values().filter(|_| tool == Tool::OpenCode);
+            let logs = files.chain(db);
             let (mut five, mut today, mut sessions) = (0, 0, 0);
             let mut hours = [0u64; 24];
             for log in logs {
@@ -186,6 +195,15 @@ impl Scanner {
         }
         out
     }
+}
+
+/// Unix seconds of the last local midnight.
+fn midnight(now: i64) -> i64 {
+    chrono::Local::now()
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|d| d.and_local_timezone(chrono::Local).earliest())
+        .map_or(now - 86400, |d| d.timestamp())
 }
 
 pub(crate) fn state(in_progress: bool, age_s: i64) -> AgentState {
