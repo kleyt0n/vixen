@@ -44,9 +44,11 @@ struct Expanded {
     dy: i32,
 }
 
-/// Fox window size at rest, and with a message bubble (logical pixels).
+/// Fox window size at rest, and with a message bubble (logical pixels). The bubble window is
+/// as tall as the page asks for, within these bounds.
 const FLOAT_SIZE: f64 = 72.0;
-const FLOAT_BUBBLE: (f64, f64) = (340.0, 150.0);
+const FLOAT_BUBBLE_W: f64 = 340.0;
+const FLOAT_BUBBLE_H: (f64, f64) = (150.0, 320.0);
 
 const FLOAT: &str = "float";
 
@@ -267,9 +269,10 @@ fn on_screen(w: &tauri::WebviewWindow, p: PhysicalPosition<i32>) -> bool {
 }
 
 /// Grow the fox window to fit a message bubble (towards free screen space), or shrink it back
-/// keeping the fox where it was. Returns which way it grew so the page can lay out the bubble.
+/// keeping the fox where it was. `height` is what the bubble needs (logical pixels). Returns which
+/// way it grew so the page can lay out the bubble.
 #[tauri::command]
-fn float_expand(app: AppHandle, state: State<AppState>, on: bool) -> Option<Expanded> {
+fn float_expand(app: AppHandle, state: State<AppState>, on: bool, height: Option<f64>) -> Option<Expanded> {
     use tauri::PhysicalSize;
     let w = app.get_webview_window(FLOAT)?;
     let scale = w.scale_factor().ok()?;
@@ -280,7 +283,8 @@ fn float_expand(app: AppHandle, state: State<AppState>, on: bool) -> Option<Expa
             return *exp;
         }
         let size = w.outer_size().ok()?;
-        let (nw, nh) = ((FLOAT_BUBBLE.0 * scale) as i32, (FLOAT_BUBBLE.1 * scale) as i32);
+        let h = height.unwrap_or(FLOAT_BUBBLE_H.0).clamp(FLOAT_BUBBLE_H.0, FLOAT_BUBBLE_H.1);
+        let (nw, nh) = ((FLOAT_BUBBLE_W * scale) as i32, (h * scale) as i32);
         let (dx, dy) = (nw - size.width as i32, nh - size.height as i32);
         let (mut right, mut down) = (false, false);
         if let Ok(Some(m)) = w.current_monitor() {
