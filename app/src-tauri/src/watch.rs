@@ -1,5 +1,5 @@
 //! Forwards snapshots to the UI and turns transitions into events: macOS notifications,
-//! and messages for the floating fox (job started / finished / failed, plan limits).
+//! and messages for the floating fox (job started / finished / failed, plan limits, insights).
 
 use crate::AppState;
 use serde::Serialize;
@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::watch;
-use vixen_core::{AgentState, JobState, Snapshot, Tool, control};
+use vixen_core::{AgentState, JobState, Note, Snapshot, Tone, Tool, control};
 
 #[derive(Default)]
 struct Seen {
@@ -19,12 +19,15 @@ struct Seen {
     agents: HashMap<(Tool, String), AgentState>,
     /// Limit windows already alerted: (tool, label, resets_at).
     limits: HashSet<(Tool, String, Option<i64>)>,
+    /// Last insights summary handled, and the items it flagged (warn or bad) with their tone.
+    insight_at: i64,
+    flagged: HashMap<String, Tone>,
 }
 
 /// A message for the floating fox.
 #[derive(Clone, Serialize)]
 struct FoxEvent {
-    /// `start` · `done` · `failed` · `limit`
+    /// `start` · `done` · `failed` · `limit` · `insight`
     kind: &'static str,
     title: String,
     detail: String,
@@ -41,6 +44,7 @@ pub async fn forward(app: AppHandle, mut rx: watch::Receiver<Snapshot>) {
         jobs(&app, &snap, &mut seen);
         agents(&app, &snap, &mut seen);
         limits(&app, &snap, &mut seen);
+        insights(&app, &snap, &mut seen);
         if rx.changed().await.is_err() {
             break; // monitor replaced or stopped
         }
@@ -57,6 +61,7 @@ fn fox(app: &AppHandle, e: FoxEvent) {
         "start" => p.events.started,
         "done" => p.events.finished,
         "failed" => p.events.failed,
+        "insight" => p.events.insights,
         _ => p.events.limits,
     };
     if p.float_button && wanted {
@@ -225,4 +230,40 @@ fn limits(app: &AppHandle, snap: &Snapshot, seen: &mut Seen) {
 
 fn notify(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// A new insights summary: the fox reads it out when it flags something new, and macOS
+/// notifies about newly flagged problems. Summaries that only restate known issues stay quiet.
+fn insights(app: &AppHandle, snap: &Snapshot, seen: &mut Seen) {
+    let Some(i) = &snap.insights else { return };
+    if i.generated_at == 0 || i.generated_at == seen.insight_at {
+        return;
+    }
+    // The first summary after (re)starting only records what's already flagged, like jobs().
+    let first = seen.insight_at == 0;
+    seen.insight_at = i.generated_at;
+    let rank = |t: Tone| match t {
+        Tone::Ok => 0,
+        Tone::Warn => 1,
+        Tone::Bad => 2,
+    };
+    // Only notes about a job or session are tracked: general notes have no stable identity.
+    let flagged: HashMap<String, Tone> =
+        i.notes.iter().filter(|n| n.tone != Tone::Ok).filter_map(|n| Some((n.key.clone()?, n.tone))).collect();
+    // New, or worse than before; recoveries stay quiet.
+    let fresh: Vec<&Note> = i
+        .notes
+        .iter()
+        .filter(|n| n.key.as_ref().is_some_and(|k| rank(n.tone) > seen.flagged.get(k).map_or(0, |t| rank(*t))))
+        .collect();
+    seen.flagged = flagged;
+    if first || fresh.is_empty() || !prefs(app).events.insights {
+        return;
+    }
+    let line = |n: &Note| if n.label.is_empty() { n.text.clone() } else { format!("{}: {}", n.label, n.text) };
+    for n in fresh.iter().filter(|n| n.tone == Tone::Bad) {
+        notify(app, if n.label.is_empty() { "Vixen insight" } else { &n.label }, &n.text);
+    }
+    let top = fresh.iter().find(|n| n.tone == Tone::Bad).unwrap_or(&fresh[0]);
+    fox(app, FoxEvent { kind: "insight", title: i.headline.clone(), detail: line(top), percent: None });
 }

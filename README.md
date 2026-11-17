@@ -50,6 +50,13 @@ irm https://raw.githubusercontent.com/kleyt0n/vixen/main/scripts/install.ps1 \| 
 
 <img src="docs/screenshots/agents.png" width="880" alt="Agents view: plan limits, token usage and sessions grouped by state">
 
+### Insights (local AI, optional)
+
+- **Short summaries**: a model served by [Ollama](https://ollama.com) reads your running jobs' logs and your agents' recent transcript activity, then writes a headline and one note per job or session, e.g. *"Epoch 186/300 at 2.4 it/s, loss still falling; done around 03:05"* or *"Pushed three fixes to PR #1012; waiting for your review."*
+- **Where they appear**: a card on Home, a line under each job and agent row, the menu-bar panel, and the floating fox. A macOS notification is sent when a note newly flags a problem.
+- **Cheap when idle**: a summary is written only when something changed, at most every few minutes.
+- **Local by default**: turn it on in **Settings → Insights** (or `[insights]` in the config), pick any installed chat model, and run `vixen insights` for the same summary in a terminal.
+
 ### Menu bar and notifications
 
 - **Menu-bar panel**: what needs attention, a timeline of running work, plan limits and machine status.
@@ -116,6 +123,7 @@ Every option is documented in [`config/example.toml`](config/example.toml).
 | `vixen` | Status of every target |
 | `vixen watch` | Live view |
 | `vixen agents` | Agent sessions, plan limits and token usage |
+| `vixen insights` | Model-written summary of jobs and agents via Ollama (`--digest` shows what the model reads) |
 | `vixen logs <target> <job>` | Tail a job's output |
 | `vixen cancel \| hold \| release <target> <job>` | Control a job |
 | `vixen targets` | List configured targets |
@@ -124,6 +132,7 @@ Every option is documented in [`config/example.toml`](config/example.toml).
 ## Privacy and security
 
 - **Local-only agents:** agent data is read from local files and is never uploaded.
+- **Insights stay local (opt-in, off by default):** job log tails and agent activity are sent only to the Ollama server you configure, `localhost` by default.
 - **Plain SSH:** remote machines are reached with your own SSH configuration, in batch mode, so Vixen never prompts for passwords.
 - **Live Claude limits (opt-in, off by default):** this reuses Claude Code's saved login to fetch current plan limits. The token is passed on standard input, never on the command line, and is never refreshed or stored by Vixen.
 

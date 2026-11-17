@@ -39,11 +39,13 @@ pub struct Events {
     pub finished: bool,
     pub failed: bool,
     pub limits: bool,
+    /// New insights summaries (and a notification when one flags a problem).
+    pub insights: bool,
 }
 
 impl Default for Events {
     fn default() -> Self {
-        Self { started: true, finished: true, failed: true, limits: true }
+        Self { started: true, finished: true, failed: true, limits: true, insights: true }
     }
 }
 

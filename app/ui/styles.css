@@ -672,3 +672,38 @@ button.link:hover { text-decoration: underline; filter: none; }
   .job .res, .job-cols .res { display: none; }
   .stats .stat:nth-child(n + 4) { display: none; }
 }
+
+/* ---- insights ------------------------------------------------------------ */
+.insights-card { margin-bottom: 24px; }
+.insights-card .card-head { margin-bottom: 10px; }
+.insights-card .card-head h2 { display: flex; align-items: center; gap: 7px; }
+.ins-spark { color: var(--accent); font-size: 13px; }
+.ins-meta { display: flex; align-items: center; gap: 6px; }
+.ins-meta button.icon { width: 26px; height: 26px; font-size: 13px; }
+.ins-headline {
+  margin: 0 0 10px; font-size: 15px; font-weight: 500; line-height: 1.45; letter-spacing: -0.01em;
+  -webkit-user-select: text; user-select: text;
+}
+.ins-notes { display: grid; gap: 1px; }
+.ins-note {
+  display: grid; grid-template-columns: 7px auto minmax(0, 1fr); gap: 10px; align-items: baseline;
+  padding: 6px 10px; margin: 0 -10px; border-radius: var(--r-sm); font-size: 12.5px; line-height: 1.4;
+}
+.ins-note b { font-weight: 600; white-space: nowrap; max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.ins-note > span:last-child { color: var(--muted); -webkit-user-select: text; user-select: text; }
+.ins-note.link { cursor: pointer; }
+.ins-note.link:hover { background: var(--hover); }
+.ins-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); align-self: start; margin-top: 0.5em; }
+.bad > .ins-dot { background: var(--red); }
+.warn > .ins-dot { background: var(--amber); }
+.ins-error { margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r-sm); background: var(--amber-soft); color: var(--amber); font-size: 12px; }
+.insight-line { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11.5px; color: var(--muted); }
+.insight-line .ins-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insight-line .ins-dot { width: 6px; height: 6px; flex: none; margin-top: 0; align-self: center; }
+.insight-line.bad .ins-text { color: var(--red); }
+.insight-line.warn .ins-text { color: var(--amber); }
+.row-note { grid-column: 2 / -1; margin-top: -10px; }
+.ins-model { gap: 6px; align-items: center; }
+.ins-model select { flex: 1; min-width: 0; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: var(--track); }
+#ins-status .ok { color: var(--green); font-weight: 600; }
+#ins-status .bad { color: var(--red); }

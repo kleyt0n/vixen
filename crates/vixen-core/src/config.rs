@@ -17,6 +17,9 @@ pub struct Config {
     /// Code-agent monitoring (local session files).
     #[serde(default, skip_serializing_if = "is_default")]
     pub agents: Agents,
+    /// Summaries of runs and agents written by a local model (Ollama).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub insights: InsightsConfig,
     #[serde(default, rename = "target", skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<Target>,
 }
@@ -61,6 +64,34 @@ impl Agents {
                 Codex => self.codex,
                 Antigravity => self.antigravity,
             }
+    }
+}
+
+/// `[insights]`: short summaries of jobs and agent sessions, written by a model served by Ollama.
+/// Off by default. Job and agent details are sent only to the Ollama server at `url`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct InsightsConfig {
+    pub enabled: bool,
+    /// Ollama server, e.g. `http://localhost:11434`.
+    pub url: String,
+    /// Model name as Ollama lists it (`ollama list`); empty picks the first installed model.
+    pub model: String,
+    /// Seconds between summaries. A summary is only rewritten when something changed.
+    pub interval: u64,
+    /// Include the last lines of running jobs' logs (one extra SSH round trip per job).
+    pub job_logs: bool,
+}
+
+impl Default for InsightsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            url: "http://localhost:11434".into(),
+            model: String::new(),
+            interval: 300,
+            job_logs: true,
+        }
     }
 }
 
@@ -213,6 +244,14 @@ impl Config {
         if self.agents.interval < 1 || self.agents.window_hours < 1 {
             bail!("[agents] interval and window_hours must be at least 1");
         }
+        let ins = &self.insights;
+        if ins.enabled && ins.interval < 60 {
+            bail!("[insights] interval must be at least 60 seconds");
+        }
+        if !(ins.url.starts_with("http://") || ins.url.starts_with("https://")) || ins.url.contains(char::is_whitespace)
+        {
+            bail!("[insights] url must be an http:// or https:// address");
+        }
         let mut seen = std::collections::HashSet::new();
         for t in &self.targets {
             let name = t.name.trim();
@@ -237,6 +276,8 @@ impl Config {
 
     /// Trim names and drop empty optional strings (as sent by forms).
     pub fn normalized(mut self) -> Self {
+        self.insights.url = self.insights.url.trim().trim_end_matches('/').to_string();
+        self.insights.model = self.insights.model.trim().to_string();
         let blank = |o: Option<String>| o.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         for t in &mut self.targets {
             t.name = t.name.trim().to_string();
@@ -356,6 +397,17 @@ mod tests {
         assert_eq!(cfg.targets[1].describe(), "skypilot");
         assert!(Config::parse("[[target]]\nname='v'\nkind='vast'\nscheduler='slurm'").is_err());
         assert!(cfg.to_toml().unwrap().contains("kind = \"skypilot\""));
+    }
+
+    #[test]
+    fn insights_section() {
+        let cfg = Config::parse("[insights]\nenabled = true\nmodel = 'qwen2.5'").unwrap();
+        assert!(cfg.insights.enabled);
+        assert_eq!(cfg.insights.url, "http://localhost:11434");
+        assert!(cfg.to_toml().unwrap().contains("[insights]"));
+        assert!(!Config::parse("").unwrap().to_toml().unwrap().contains("insights"), "default is omitted");
+        assert!(Config::parse("[insights]\nenabled = true\ninterval = 5").is_err());
+        assert!(Config::parse("[insights]\nurl = 'file:///etc/passwd'").is_err());
     }
 
     #[test]

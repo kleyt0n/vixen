@@ -79,7 +79,20 @@
     ],
   };
 
-  const prefs = { tray_title: "count_eta", float_button: true, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true } };
+  snapshot.insights = {
+    generated_at: T - 95, model: "gemma3:4b", busy: false, error: null,
+    headline: "Training is on track; finetune-llama finishes in about 3 hours and one agent needs your answer.",
+    notes: [
+      { kind: "agent", key: "claude_code::a2", label: "vit-scaling", tone: "warn", text: "Drafted §4 with the three main tables; asks whether the ablations go in the appendix." },
+      { kind: "job", key: "dgx::4182", label: "finetune-llama", tone: "ok", text: "Epoch 186/300 at 2.4 it/s, loss still falling; done around " + new Date((T + 3 * h + 12 * m) * 1000).toTimeString().slice(0, 5) + "." },
+      { kind: "job", key: "hpc::7731_4", label: "train-vit", tone: "ok", text: "Epoch 132/300 at 4.9 it/s; on pace to finish well inside its 48h limit." },
+      { kind: "agent", key: "claude_code::a1", label: "trainer", tone: "ok", text: "Added backoff with jitter to the S3 loader; running the loader tests now." },
+      { kind: "agent", key: "codex::c1", label: "evals", tone: "ok", text: "Profiling eval.py; batched the tokenizer calls and is re-running the timing." },
+      { kind: "general", key: null, label: "", tone: "warn", text: "GPU 3 on dgx is idle while four train-vit tasks wait on hpc." },
+    ],
+  };
+
+  const prefs = { tray_title: "count_eta", float_button: true, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true, insights: true } };
   // Six hours of per-machine GPU utilisation, one point per 5-minute poll.
   const walk = (base, wobble, seed) => {
     let v = base, s = seed;

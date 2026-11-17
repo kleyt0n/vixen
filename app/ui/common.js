@@ -92,6 +92,7 @@ const ICON_PATHS = {
   menubar: "M3 5h18v14H3zM3 9h18M15 7h.01M18 7h.01",
   fox: "M5 4l3.5 4h7L19 4l1 8-8 8-8-8ZM9.5 12h.01M14.5 12h.01",
   bell: "M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15ZM10 20.5a2 2 0 0 0 4 0",
+  insight: "M4 5h16v11H9.5L5 19.5V16H4ZM8 9h8M8 12.5h5",
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 11v5M12 8h.01",
 };
 
@@ -191,6 +192,20 @@ function dismissNeeds(keys) {
 function onDismissChange(fn) {
   window.addEventListener("storage", (e) => e.key === DISMISS_KEY && fn());
 }
+
+// ---- insights -----------------------------------------------------------------
+// Short notes written by a local model (Ollama), keyed like the rows they describe:
+// `<tool>::<session id>` for agents and `<target>::<job id>` for jobs.
+
+function insightNotes(snap) {
+  const m = new Map();
+  for (const n of snap?.insights?.notes ?? []) if (n.key) m.set(n.key, n);
+  return m;
+}
+
+/// One note under a row: a tone dot and the text.
+const insightLine = (n, cls = "") =>
+  n ? `<div class="insight-line ${n.tone} ${cls}" title="${esc(n.text)}"><span class="ins-dot"></span><span class="ins-text">${esc(n.text)}</span></div>` : "";
 
 // ---- window chrome ----------------------------------------------------------
 

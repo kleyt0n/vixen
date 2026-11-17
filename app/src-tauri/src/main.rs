@@ -303,6 +303,24 @@ fn open_url(url: String) -> Res<()> {
     std::process::Command::new("open").arg(&url).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Write a new insights summary now.
+#[tauri::command]
+fn summarize(state: State<AppState>) {
+    if let Some(m) = state.monitor.lock().unwrap().as_ref() {
+        m.summarize();
+    }
+}
+
+/// Models installed on an Ollama server (for the Settings picker).
+#[tauri::command]
+async fn ollama_models(url: String) -> Res<Vec<String>> {
+    let url = url.trim().trim_end_matches('/');
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("use an http:// or https:// address".into());
+    }
+    vixen_core::insights::models(url).await.map_err(|e| format!("{e:#}"))
+}
+
 #[tauri::command]
 fn reload(app: AppHandle) {
     start(&app);
@@ -385,6 +403,8 @@ fn main() {
             set_prefs,
             float_click,
             float_expand,
+            summarize,
+            ollama_models,
             reload
         ])
         .setup(|app| {
