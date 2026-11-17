@@ -70,7 +70,12 @@ impl Monitor {
         let state = Arc::new(Mutex::new(Shared {
             targets: targets
                 .iter()
-                .map(|t| TargetStatus { name: t.name.clone(), kind: t.describe(), ..Default::default() })
+                .map(|t| TargetStatus {
+                    name: t.name.clone(),
+                    kind: t.describe(),
+                    gpu_source: t.gpu_source(),
+                    ..Default::default()
+                })
                 .collect(),
             agents: Vec::new(),
             usage: Vec::new(),
@@ -230,7 +235,12 @@ pub struct Poller {
 impl Poller {
     pub fn new(target: Target, tail_bytes: u32) -> Self {
         let exec = Exec::new(target.host.clone(), target.ssh_args.clone());
-        let last = TargetStatus { name: target.name.clone(), kind: target.describe(), ..Default::default() };
+        let last = TargetStatus {
+            name: target.name.clone(),
+            kind: target.describe(),
+            gpu_source: target.gpu_source(),
+            ..Default::default()
+        };
         Self { target, exec, tail_bytes, eta: EtaTracker::default(), last }
     }
 
@@ -267,6 +277,7 @@ impl Poller {
                     host: p.host,
                     gpus: p.gpus,
                     jobs: p.jobs,
+                    gpu_source: self.target.gpu_source(),
                 };
             }
             Err(e) => {

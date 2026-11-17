@@ -1,6 +1,7 @@
 //! Targets file. Default location: `~/.config/vixen/config.toml`
 //! (override with `$VIXEN_CONFIG`).
 
+use crate::model::GpuSource;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -212,6 +213,15 @@ impl Target {
                 parts.join(" · ")
             }
             k => k.label().into(),
+        }
+    }
+
+    pub fn gpu_source(&self) -> GpuSource {
+        match self.kind {
+            Kind::Host if self.host_gpus => GpuSource::Host,
+            Kind::Host if self.job_gpus => GpuSource::Jobs,
+            Kind::Vast => GpuSource::Instances,
+            _ => GpuSource::None,
         }
     }
 }
