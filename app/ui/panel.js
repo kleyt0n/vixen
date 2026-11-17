@@ -71,6 +71,19 @@ function renderNow() {
   ].join(""));
   setHTML($("#p-banner"), error ? `<div class="banner"><span class="msg">${esc(error)}</span></div>` : "");
 
+  // Insights: the headline, then what needs a look (or the first notes when all is well).
+  const ins = snap?.insights;
+  const shown = ins?.headline || ins?.error;
+  $("#sec-insight").hidden = !shown;
+  if (shown) {
+    $("#p-ins-when").innerHTML = ins.busy ? "updating…" : ins.generated_at ? `<span data-since="${ins.generated_at}"></span>` : "";
+    const flagged = ins.notes.filter((x) => x.tone !== "ok");
+    const notes = (flagged.length ? flagged : ins.notes).slice(0, 3);
+    const nav = (x) => x.kind === "agent" ? `data-agent="${esc(x.key)}"` : x.kind === "job" ? `data-target="${esc(x.key.split("::")[0])}"` : "";
+    setHTML($("#p-insight"), (ins.headline ? `<p class="ins-headline">${esc(ins.headline)}</p>` : `<p class="ins-headline faint">${esc(ins.error)}</p>`)
+      + notes.map((x) => `<div class="ins-note ${x.tone}" ${nav(x)}><span class="ins-dot"></span>${x.label ? `<b>${esc(x.label)}</b>` : ""}<span>${esc(x.text)}</span></div>`).join(""));
+  }
+
   // Needs you: waiting agents, machines down, jobs about to overrun or failed. Each can be dismissed.
   const x = (it) => `<button class="dismiss" data-dismiss="${esc(it.key)}" title="Dismiss">✕</button>`;
   const needs = needsItems.map((it) => {

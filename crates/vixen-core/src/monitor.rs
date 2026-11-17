@@ -4,7 +4,8 @@
 use crate::agents::Scanner;
 use crate::config::{Config, Target};
 use crate::exec::Exec;
-use crate::model::{Agent, JobState, Snapshot, TargetStatus, ToolUsage};
+use crate::insights::Engine;
+use crate::model::{Agent, Insights, JobState, Snapshot, TargetStatus, ToolUsage};
 use crate::progress::EtaTracker;
 use crate::sources;
 use std::collections::HashSet;
@@ -18,6 +19,7 @@ struct Shared {
     targets: Vec<TargetStatus>,
     agents: Vec<Agent>,
     usage: Vec<ToolUsage>,
+    insights: Option<Insights>,
 }
 
 impl Shared {
@@ -27,6 +29,7 @@ impl Shared {
             targets: self.targets.clone(),
             agents: self.agents.clone(),
             usage: self.usage.clone(),
+            insights: self.insights.clone(),
         }
     }
 
@@ -48,6 +51,8 @@ struct Waker {
 pub struct Monitor {
     rx: watch::Receiver<Snapshot>,
     wake: Vec<Waker>,
+    /// Wakes the insights task for a summary now (when insights are on).
+    summarize: Option<Arc<Notify>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
@@ -69,6 +74,7 @@ impl Monitor {
                 .collect(),
             agents: Vec::new(),
             usage: Vec::new(),
+            insights: cfg.insights.enabled.then(Insights::default),
         }));
         let (tx, rx) = watch::channel(state.lock().unwrap().snapshot());
         let tx = Arc::new(tx);
@@ -120,7 +126,46 @@ impl Monitor {
                 }
             }));
         }
-        Self { rx, wake, tasks }
+        // Insights: a summary every `interval` when something changed, or on request.
+        let mut summarize = None;
+        if cfg.insights.enabled {
+            let notify = Arc::new(Notify::new());
+            summarize = Some(notify.clone());
+            let (cfg, state, tx) = (cfg.clone(), state.clone(), tx.clone());
+            tasks.push(tokio::spawn(async move {
+                let mut engine = Engine::default();
+                let every = Duration::from_secs(cfg.insights.interval.max(60));
+                // Give targets and agents a moment for their first poll.
+                let mut forced = tokio::select! {
+                    _ = tokio::time::sleep(INSIGHTS_WARMUP) => false,
+                    _ = notify.notified() => true,
+                };
+                loop {
+                    let snap = state.lock().unwrap().snapshot();
+                    if forced || engine.due(&snap) {
+                        let publish = |ins: Insights| {
+                            let mut s = state.lock().unwrap();
+                            s.insights = Some(ins);
+                            tx.send_replace(s.snapshot());
+                        };
+                        publish(engine.start());
+                        publish(engine.run(&snap, &cfg).await);
+                    }
+                    forced = tokio::select! {
+                        _ = tokio::time::sleep(every) => false,
+                        _ = notify.notified() => true,
+                    };
+                }
+            }));
+        }
+        Self { rx, wake, summarize, tasks }
+    }
+
+    /// Write a new insights summary now (no-op when insights are off).
+    pub fn summarize(&self) {
+        if let Some(n) = &self.summarize {
+            n.notify_one();
+        }
     }
 
     pub fn subscribe(&self) -> watch::Receiver<Snapshot> {
@@ -169,7 +214,7 @@ impl Monitor {
         for h in handles {
             targets.push(h.await.unwrap_or_default());
         }
-        Snapshot { taken_at: now(), targets, agents: scan.agents, usage: scan.usage }
+        Snapshot { taken_at: now(), targets, agents: scan.agents, usage: scan.usage, insights: None }
     }
 }
 
@@ -234,6 +279,9 @@ impl Poller {
         self.last.clone()
     }
 }
+
+/// Delay before the first summary, so it sees polled targets.
+const INSIGHTS_WARMUP: Duration = Duration::from_secs(15);
 
 pub fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)

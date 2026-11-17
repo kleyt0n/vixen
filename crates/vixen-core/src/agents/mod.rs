@@ -4,6 +4,7 @@
 //! Each scan stats candidate files and re-parses only those whose size or mtime
 //! changed, so polling every few seconds stays cheap.
 
+pub mod activity;
 mod antigravity;
 mod claude;
 mod codex;

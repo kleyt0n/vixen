@@ -25,6 +25,17 @@ antigravity  = true
 # for Keychain access). Off: limits update only when you run /usage in Claude Code.
 live_claude_limits = false
 
+# Insights: a local model reads running jobs' logs and agents' transcripts and
+# writes a headline plus a short note per job and session (Home, each row, the
+# menu bar, and the floating fox). Needs Ollama (ollama.com): `ollama pull gemma3`.
+# Data goes only to `url`; keep it on localhost to stay on this machine.
+[insights]
+enabled  = false
+url      = "http://localhost:11434"
+model    = ""            # as in `ollama list`; empty picks a general chat model
+interval = 300           # seconds between summaries; skipped while nothing changes
+job_logs = true          # include the last lines of running jobs' logs (one SSH round trip each)
+
 # A GPU server running its own Slurm controller (e.g. a DGX box).
 [[target]]
 name      = "dgx"

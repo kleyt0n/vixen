@@ -64,6 +64,17 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Short summary of jobs and agents, written by a local model through Ollama ([insights] in the config).
+    Insights {
+        /// Ollama model to use instead of the configured one.
+        #[arg(short, long)]
+        model: Option<String>,
+        /// Print the digest sent to the model instead of asking it.
+        #[arg(long)]
+        digest: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// List configured targets.
     Targets,
     /// Create ~/.config/vixen/config.toml from the example.
@@ -148,6 +159,26 @@ async fn run(cli: Cli) -> Result<()> {
             } else {
                 print!("{}", render::usage(&scan.usage, color));
                 print!("{}", render::agents(&scan.agents, color, if all { None } else { Some(12) }));
+            }
+        }
+        Cmd::Insights { model, digest, json } => {
+            let mut cfg = cfg;
+            if let Some(m) = model {
+                cfg.insights.model = m;
+            }
+            let snap = Monitor::once(&cfg).await;
+            if digest {
+                print!("{}", vixen_core::insights::digest(&snap, &cfg).await.text);
+                return Ok(());
+            }
+            let ins = vixen_core::insights::Engine::default().run(&snap, &cfg).await;
+            if let Some(e) = ins.error {
+                bail!(e);
+            }
+            if json {
+                println!("{}", serde_json::to_string_pretty(&ins)?);
+            } else {
+                print!("{}", render::insights(&ins, color));
             }
         }
         Cmd::Targets => {

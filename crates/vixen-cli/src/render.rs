@@ -3,7 +3,7 @@
 use chrono::{Local, TimeZone};
 use std::fmt::Write;
 use vixen_core::timefmt::human;
-use vixen_core::{Agent, AgentState, EtaMethod, Gpu, Job, JobState, Snapshot, TargetStatus, ToolUsage};
+use vixen_core::{Agent, AgentState, EtaMethod, Gpu, Insights, Job, JobState, Snapshot, TargetStatus, Tone, ToolUsage};
 
 struct Paint(bool);
 
@@ -323,6 +323,26 @@ pub fn usage(list: &[ToolUsage], color: bool) -> String {
                 u.sessions_today
             ))
         );
+    }
+    out
+}
+
+/// Headline, then one line per note: `● train-vit  loss plateaued at 0.31`.
+pub fn insights(i: &Insights, color: bool) -> String {
+    let p = Paint(color);
+    let mut out = format!("{}\n", p.bold(&i.headline));
+    let width = i.notes.iter().map(|n| n.label.chars().count()).max().unwrap_or(0).min(28);
+    for n in &i.notes {
+        let dot = match n.tone {
+            Tone::Bad => p.red("●"),
+            Tone::Warn => p.yellow("●"),
+            Tone::Ok => p.green("●"),
+        };
+        let label = format!("{:<width$}", trunc(&n.label, width));
+        let _ = writeln!(out, "  {dot} {}  {}", p.bold(&label), n.text);
+    }
+    if let Some(m) = &i.model {
+        let _ = writeln!(out, "{}", p.dim(&format!("written by {m} via Ollama")));
     }
     out
 }

@@ -7,11 +7,13 @@
 //! * [`progress`] — training-log progress parsing and ETA estimation
 //! * [`monitor`]  — concurrent poll loop that publishes [`model::Snapshot`]s
 //! * [`control`]  — job actions (cancel, hold, release, logs)
+//! * [`insights`] — summaries of jobs and agents written by a local model (Ollama)
 
 pub mod agents;
 pub mod config;
 pub mod control;
 pub mod exec;
+pub mod insights;
 pub mod model;
 pub mod monitor;
 pub mod progress;

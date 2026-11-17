@@ -84,6 +84,32 @@
           </label>
         </div>
           </section>
+          <section class="set-pane" data-pane="insights" hidden>
+            <header class="pane-head"><div><h2>Insights</h2><p>A local model reads your jobs' logs and your agents' transcripts, then writes a short note on each. It runs on Ollama, on this Mac by default.</p></div><span class="scope save">Saved to config.toml</span></header>
+<div class="group-box" id="ins-cfg">
+          <div class="row">
+            <div><div class="row-title">Write insights</div><div class="row-help">Summarise running jobs and active agents on Home, in each row and in the menu bar.</div></div>
+            <div class="ctl"><label class="switch"><input type="checkbox" data-ins="enabled"><span></span></label></div>
+          </div>
+          <label class="row">
+            <div><div class="row-title">Ollama server</div><div class="row-help">Job logs and agent activity are sent here. Keep it on localhost to stay on this Mac.</div></div>
+            <input data-ins="url" type="text" placeholder="http://localhost:11434" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="row">
+            <div><div class="row-title">Model</div><div class="row-help" id="ins-status">Any chat model from <span class="mono">ollama list</span>. Small general models (Gemma, Llama, Qwen) work well.</div></div>
+            <div class="ctl ins-model"><select data-ins="model"></select><button id="ins-check" title="Look up installed models">Check</button></div>
+          </div>
+          <label class="row">
+            <div><div class="row-title">Every</div><div class="row-help">How often a new summary is written. Skipped when nothing changed.</div></div>
+            <div class="unit"><input data-ins="interval" type="number" min="1" step="1"><span>min</span></div>
+          </label>
+          <div class="row">
+            <div><div class="row-title">Read job logs</div><div class="row-help">Include the last lines of each running job's log (one extra SSH round trip per job).</div></div>
+            <div class="ctl"><label class="switch"><input type="checkbox" data-ins="job_logs"><span></span></label></div>
+          </div>
+        </div>
+            <p class="pane-note">No Ollama yet? Install it from ollama.com, then run <span class="mono">ollama pull gemma3</span>.</p>
+          </section>
           <section class="set-pane" data-pane="menubar" hidden>
             <header class="pane-head"><div><h2>Menu bar</h2><p>What the fox in the menu bar shows next to it.</p></div><span class="scope now">Applies immediately</span></header>
 <div class="group-box"><div class="row">
@@ -112,12 +138,13 @@
               <label><input type="checkbox" data-ev="finished"> Finished</label>
               <label><input type="checkbox" data-ev="failed"> Failed</label>
               <label><input type="checkbox" data-ev="limits"> Limits</label>
+              <label><input type="checkbox" data-ev="insights"> Insights</label>
             </div>
           </div><label class="row">
             <div><div class="row-title">Limit alert</div><div class="row-help">Alert when any agent limit (session, weekly…) reaches this. 0 turns it off.</div></div>
             <div class="unit"><input id="pref-limit" type="number" min="0" max="100" step="5"><span>%</span></div>
           </label></div>
-            <p class="pane-note">macOS notifications are sent for finished and failed jobs, agents waiting for you, and limits above the threshold. Manage them in System Settings → Notifications → Vixen.</p>
+            <p class="pane-note">macOS notifications are sent for finished and failed jobs, agents waiting for you, limits above the threshold, and problems an insight newly flags (when Insights is on). Manage them in System Settings → Notifications → Vixen.</p>
           </section>
           <section class="set-pane" data-pane="about" hidden>
             <header class="pane-head"><div><h2>About</h2><p></p></div></header>
@@ -149,6 +176,7 @@
     </header>
     <div class="content">
       <div class="home">
+        <section class="card insights-card" id="insights" hidden></section>
         <section>
           <h2 class="section-title">Needs you <span id="attn-count" class="count"></span></h2>
           <div id="attn" class="attn"></div>

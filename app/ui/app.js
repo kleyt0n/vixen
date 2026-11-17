@@ -20,6 +20,7 @@ const S = {
   groups: new Set(),    // expanded queued groups
   hist: new Map(),      // gpu key → util samples
   seen: new Map(),      // target → last updated_at (to sample history once per poll)
+  notes: new Map(),     // insight notes by row key
   log: null,            // {target, id, path, name}
   confirm: null,
 };
@@ -87,6 +88,7 @@ function renderNow() {
   if (frame) return;
   frame = requestAnimationFrame(() => {
     frame = 0;
+    S.notes = insightNotes(S.snap);
     renderNav();
     if (S.page === "home") { renderHome(); renderTrends(); }
     if (S.page === "agents") renderAgents();
@@ -199,6 +201,7 @@ function agentRow(a) {
     <div class="cell num muted"><span data-since="${a.updated_at}"></span></div>
     <div class="cell">${ctx}</div>
     <div class="cell"><button class="more" data-aact="toggle">${open ? "▾" : "▸"}</button></div>
+    ${insightLine(S.notes.get(k), "row-note")}
   </div>`;
   if (open) {
     const rows = [
@@ -300,7 +303,33 @@ function attnRow(it) {
     <div class="attn-acts"><button data-hact="job">View</button>${dismissBtn(it)}</div></div>`;
 }
 
+const TONE_LABEL = { bad: "Problem", warn: "Worth a look", ok: "On track" };
+
+function renderInsights() {
+  const box = $("#insights");
+  const ins = S.snap?.insights;
+  box.hidden = !ins;
+  if (!ins) return setHTML(box, "");
+  const when = ins.generated_at ? `<span data-since="${ins.generated_at}"></span>` : "";
+  const meta = [ins.model && esc(ins.model), when].filter(Boolean).join(" · ");
+  const head = `<div class="card-head"><h2><span class="ins-spark">✦</span>Insights</h2>
+    <div class="ins-meta"><span class="faint small">${ins.busy ? "Reading your runs…" : meta}</span>
+    <button class="ghost icon ${ins.busy ? "spin" : ""}" data-ins="run" title="Summarize now" ${ins.busy ? "disabled" : ""}>↻</button></div></div>`;
+  const err = ins.error ? `<div class="ins-error">${esc(ins.error)}${ins.generated_at ? ` <span class="faint">· showing the last summary</span>` : ""}</div>` : "";
+  const headline = ins.headline
+    ? `<p class="ins-headline">${esc(ins.headline)}</p>`
+    : !ins.error ? `<p class="ins-headline faint">${ins.busy ? "Writing the first summary…" : "The first summary arrives shortly after start."}</p>` : "";
+  const note = (n) => {
+    const go = n.kind === "agent" ? `data-go="agents" data-akey="${esc(n.key)}"`
+      : n.kind === "job" ? `data-go="compute" data-view="${esc(n.key.split("::")[0])}" data-jkey="${esc(n.key)}"` : "";
+    return `<div class="ins-note ${n.tone} ${go ? "link" : ""}" ${go} title="${TONE_LABEL[n.tone] ?? ""}">
+      <span class="ins-dot"></span>${n.label ? `<b>${esc(n.label)}</b>` : ""}<span>${esc(n.text)}</span></div>`;
+  };
+  setHTML(box, head + err + headline + (ins.notes.length ? `<div class="ins-notes">${ins.notes.map(note).join("")}</div>` : ""));
+}
+
 function renderHome() {
+  renderInsights();
   const ts = S.snap?.targets ?? [];
   const ags = agentList();
   const items = attention();
@@ -510,6 +539,7 @@ function jobRow(t, j) {
     <div class="cell">${time}</div>
     <div class="cell res"><div class="l1">${esc(j.resources ?? "")}</div><div class="l2">${esc(j.state === "running" ? j.detail ?? "" : "")}</div></div>
     <div class="cell"><button class="more" data-act="toggle" title="Details">${open ? "▾" : "▸"}</button></div>
+    ${insightLine(S.notes.get(k), "row-note")}
   </div>`;
   if (open) html += detail(t, j);
   return html;
@@ -706,9 +736,15 @@ $("#view-home").addEventListener("click", (e) => {
   const tname = e.target.closest("[data-target]")?.dataset.target;
   if (h?.dataset.hact === "retry") return refreshAll(tname);
   if (h?.dataset.hact === "job" || (tname && !h)) { S.view = tname; return showPage("compute"); }
+  if (e.target.closest('[data-ins="run"]')) {
+    if (S.snap?.insights) S.snap.insights.busy = true;
+    render();
+    return invoke("summarize").catch((err) => toast(String(err), true));
+  }
   const go = e.target.closest("[data-go]");
   if (go) {
     if (go.dataset.view) S.view = go.dataset.view;
+    if (go.dataset.jkey) S.open.add(go.dataset.jkey);
     if (akey) { S.tool = "all"; S.agentOpen.add(akey); }
     return showPage(go.dataset.go);
   }
@@ -821,10 +857,12 @@ const TARGET_DEFAULTS = {
 };
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const AGENT_DEFAULTS = { enabled: true, window_hours: 24, interval: 5, claude_code: true, codex: true, antigravity: true, live_claude_limits: false };
+const INSIGHT_DEFAULTS = { enabled: false, url: "http://localhost:11434", model: "", interval: 300, job_logs: true };
 const withDefaults = (cfg) => ({
   interval: cfg.interval ?? 300,
   tail_bytes: cfg.tail_bytes ?? 6144,
   agents: { ...AGENT_DEFAULTS, ...(cfg.agents ?? {}) },
+  insights: { ...INSIGHT_DEFAULTS, ...(cfg.insights ?? {}) },
   targets: (cfg.targets ?? cfg.target ?? []).map((t) => ({ ...clone(TARGET_DEFAULTS), ...t })),
 });
 // Cloud kinds polled through a local CLI: kind → [label, default command, has uvx fallback].
@@ -851,6 +889,8 @@ function validate(cfg) {
   if (!(cfg.interval >= 2)) errs.general.interval = "At least 2 seconds";
   if (!(cfg.agents?.window_hours >= 1)) errs.general.window = "At least 1 hour";
   if (!(cfg.tail_bytes >= 1024)) errs.general.tail = "At least 1 KB";
+  if (!/^https?:\/\/\S+$/.test(cfg.insights.url.trim())) errs.general.ins_url = "An http:// address, e.g. http://localhost:11434";
+  if (cfg.insights.enabled && !(cfg.insights.interval >= 60)) errs.general.ins_interval = "At least 1 minute";
   const names = new Map();
   cfg.targets.forEach((t) => names.set(t.name.trim(), (names.get(t.name.trim()) ?? 0) + 1));
   cfg.targets.forEach((t, i) => {
@@ -869,7 +909,7 @@ function validate(cfg) {
 let PREFS = null;
 async function loadPrefs() {
   try { PREFS = await invoke("get_prefs"); }
-  catch { PREFS = { tray_title: "count_eta", float_button: false, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true } }; }
+  catch { PREFS = { tray_title: "count_eta", float_button: false, float_style: "kit", limit_alert: 80, events: { started: true, finished: true, failed: true, limits: true, insights: true } }; }
   renderPrefs();
 }
 function renderPrefs() {
@@ -914,6 +954,7 @@ const SET_PANES = [
   { id: "general", label: "General", icon: "sliders" },
   { id: "machines", label: "Machines", icon: "compute" },
   { id: "agents", label: "Agents", icon: "agents" },
+  { id: "insights", label: "Insights", icon: "insight" },
   { group: "App" },
   { id: "menubar", label: "Menu bar", icon: "menubar" },
   { id: "fox", label: "Floating icon", icon: "fox" },
@@ -933,6 +974,7 @@ function dirtyPanes() {
   if (d.interval !== s.interval || d.tail_bytes !== s.tail_bytes) out.add("general");
   if (j(d.targets) !== j(s.targets)) out.add("machines");
   if (j(d.agents) !== j(s.agents)) out.add("agents");
+  if (j(d.insights) !== j(s.insights)) out.add("insights");
   return out;
 }
 
@@ -946,6 +988,7 @@ function renderSetNav() {
 
 function showPane(id) {
   setPane = id;
+  if (id === "insights") checkOllama();
   try { localStorage.setItem(PANE_KEY, id); } catch {}
   renderSetNav();
   $("#view-settings .set-content").scrollTop = 0;
@@ -967,6 +1010,7 @@ async function openSettings() {
   $("#sheet").hidden = true;
   if (!CFG.draft) await loadSettings();
   renderSettings();
+  if (setPane === "insights") checkOllama();
   renderSetNav();
   render();
 }
@@ -1030,6 +1074,7 @@ function renderSettings() {
     else el.value = v;
     if (el.dataset.ag !== "enabled") el.disabled = !d.agents.enabled;
   });
+  renderInsightSettings();
   CFG.sel = Math.min(CFG.sel, Math.max(0, d.targets.length - 1));
   renderTargetList();
   renderTargetForm();
@@ -1121,7 +1166,8 @@ function showErrors() {
     el.textContent = msg;
     el.closest(".row").classList.toggle("invalid", !!msg);
   });
-  [["#g-interval", errs.general.interval], ["#g-tail", errs.general.tail]].forEach(([sel, msg]) => {
+  [["#g-interval", errs.general.interval], ["#g-tail", errs.general.tail],
+   ['#ins-cfg [data-ins="url"]', errs.general.ins_url], ['#ins-cfg [data-ins="interval"]', errs.general.ins_interval]].forEach(([sel, msg]) => {
     $(sel).closest(".row").classList.toggle("invalid", !!msg);
     $(sel).title = msg ?? "";
   });
@@ -1278,6 +1324,61 @@ $("#agent-cfg").addEventListener("input", (e) => {
   if (f === "enabled") renderSettings();
   else updateSettingsChrome();
 });
+
+// Insights: the model list comes from the Ollama server in the form (saved or not).
+const OLLAMA = { url: null, models: null, error: null, busy: false };
+
+function renderInsightSettings() {
+  const ins = CFG.draft?.insights;
+  if (!ins) return;
+  document.querySelectorAll("#ins-cfg [data-ins]").forEach((el) => {
+    const f = el.dataset.ins;
+    if (f === "model") return;
+    if (el.type === "checkbox") el.checked = !!ins[f];
+    else if (document.activeElement !== el) el.value = f === "interval" ? Math.round(ins.interval / 60) : ins[f];
+    if (f !== "enabled") el.disabled = !ins.enabled;
+  });
+  const sel = $('#ins-cfg [data-ins="model"]');
+  const names = [...new Set([...(OLLAMA.models ?? []), ...(ins.model ? [ins.model] : [])])];
+  sel.innerHTML = `<option value="">Automatic</option>` + names.map((m) => `<option value="${esc(m)}">${esc(m)}${OLLAMA.models && !OLLAMA.models.includes(m) ? " (not installed)" : ""}</option>`).join("");
+  sel.value = ins.model;
+  sel.disabled = !ins.enabled;
+  $("#ins-check").disabled = !ins.enabled || OLLAMA.busy;
+  $("#ins-status").innerHTML = OLLAMA.busy ? "Asking Ollama…"
+    : OLLAMA.error ? `<span class="bad">✕ ${esc(OLLAMA.error)}</span>`
+    : OLLAMA.models ? `<span class="ok">✓</span> Connected · ${OLLAMA.models.length} model${OLLAMA.models.length === 1 ? "" : "s"} installed. Automatic picks a general chat model.`
+    : `Any chat model from <span class="mono">ollama list</span>. Small general models (Gemma, Llama, Qwen) work well.`;
+}
+
+let ollamaSeq = 0;
+async function checkOllama(force = false) {
+  const url = CFG.draft?.insights.url.trim();
+  if (!url || (!force && OLLAMA.url === url) || !CFG.draft.insights.enabled) return;
+  const seq = ++ollamaSeq;
+  Object.assign(OLLAMA, { url, busy: true, error: null });
+  renderInsightSettings();
+  let models = null, error = null;
+  try { models = await invoke("ollama_models", { url }); }
+  catch (e) { error = String(e); }
+  if (seq !== ollamaSeq) return; // a newer check owns the result
+  Object.assign(OLLAMA, { models, error, busy: false });
+  renderInsightSettings();
+}
+
+let ollamaTimer;
+$("#ins-cfg").addEventListener("input", (e) => {
+  const f = e.target.dataset.ins;
+  if (!f || !CFG.draft) return;
+  const ins = CFG.draft.insights;
+  if (e.target.type === "checkbox") ins[f] = e.target.checked;
+  else if (f === "interval") ins.interval = e.target.value === "" ? 0 : Math.round(Number(e.target.value) * 60);
+  else ins[f] = e.target.value;
+  if (f === "url") { clearTimeout(ollamaTimer); ollamaTimer = setTimeout(() => checkOllama(), 600); }
+  if (f === "enabled") { renderInsightSettings(); checkOllama(); }
+  showErrors();
+  updateSettingsChrome();
+});
+$("#ins-check").addEventListener("click", () => checkOllama(true));
 
 onDismissChange(() => render());
 

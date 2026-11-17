@@ -1,6 +1,6 @@
 // Floating fox: drag to move, click to toggle the summary panel next to it.
-// Shows a speech bubble with a little animation when a job starts, finishes or fails, or a plan
-// limit gets high. Bubbles stay until closed with ✕; more messages queue behind.
+// Shows a speech bubble with a little animation when a job starts, finishes or fails, a plan
+// limit gets high, or an insight flags something new. Bubbles stay until closed with ✕; more messages queue behind.
 "use strict";
 
 const { invoke } = window.__TAURI__.core;
@@ -49,6 +49,7 @@ const KIND = {
   done: { icon: "✓", anim: "hop" },
   failed: { icon: "✕", anim: "droop" },
   limit: { icon: "!", anim: "wiggle" },
+  insight: { icon: "✦", anim: "perk" },
 };
 const ANIMS = Object.values(KIND).map((k) => k.anim);
 

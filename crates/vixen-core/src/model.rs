@@ -13,6 +13,9 @@ pub struct Snapshot {
     /// Per-tool plan limits and token totals.
     #[serde(default)]
     pub usage: Vec<ToolUsage>,
+    /// Model-written summary of jobs and agents; `None` when insights are off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insights: Option<Insights>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -293,4 +296,50 @@ pub struct ToolUsage {
     /// Tokens per hour over the last 24 hours, oldest first; the last entry is the current hour.
     #[serde(default)]
     pub tokens_by_hour: Vec<u64>,
+}
+
+/// A short, model-written read of what's running: one headline plus a note per job or agent.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Insights {
+    /// Unix seconds of the last successful summary (0: none yet).
+    pub generated_at: i64,
+    /// Model that wrote it, as Ollama names it.
+    pub model: Option<String>,
+    pub headline: String,
+    pub notes: Vec<Note>,
+    /// A summary is being written now.
+    pub busy: bool,
+    /// Why the last attempt failed (the previous summary, if any, is kept).
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoteKind {
+    Agent,
+    Job,
+    General,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tone {
+    /// Progressing normally.
+    Ok,
+    /// Worth a look: slow, stalled, near a limit, waiting a long time.
+    Warn,
+    /// Something is wrong: failed, erroring, will miss its limit.
+    Bad,
+}
+
+/// One insight about a job or agent session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Note {
+    pub kind: NoteKind,
+    /// Matches the UI's row keys: `<tool>::<session id>` for agents, `<target>::<job id>` for jobs.
+    pub key: Option<String>,
+    /// What the note is about, e.g. the job or session name.
+    pub label: String,
+    pub text: String,
+    pub tone: Tone,
 }
